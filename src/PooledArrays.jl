@@ -418,4 +418,26 @@ function Base.setindex!(x::PooledArray, val, ind::Int)
     return x
 end
 
+##############################################################################
+##
+## growing and shrinking
+##
+##############################################################################
+
+function Base.push!{S,R,T}(pv::PooledVector{S,R}, v::T)
+    v = convert(S,v)
+    push!(pv.refs, getpoolidx(pv, v))
+    return v
+end
+
+Base.pop!(pv::PooledVector) = pv.pool[pop!(pv.refs)]
+
+function Base.unshift!{S,R,T}(pv::PooledVector{S,R}, v::T)
+    v = convert(S,v)
+    unshift!(pv.refs, getpoolidx(pv, v))
+    return v
+end
+
+Base.shift!(pv::PooledVector) = pv.pool[shift!(pv.refs)]
+
 end
