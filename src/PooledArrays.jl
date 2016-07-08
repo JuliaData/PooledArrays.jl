@@ -440,4 +440,6 @@ end
 
 Base.shift!(pv::PooledVector) = pv.pool[shift!(pv.refs)]
 
+Base.empty!(pv::PooledVector) = (empty!(pv.refs); pv)
+
 end
