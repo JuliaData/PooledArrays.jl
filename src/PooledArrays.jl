@@ -109,7 +109,7 @@ Base.endof(pa::PooledArray) = endof(pa.refs)
 Base.copy(pa::PooledArray) = PooledArray(RefArray(copy(pa.refs)), copy(pa.pool))
 # TODO: Implement copy_to()
 
-function Base.resize!{T,R}(pa::PooledArray{T,R,1}, n::Int)
+function Base.resize!{T,R}(pa::PooledArray{T,R,1}, n::Integer)
     oldn = length(pa.refs)
     resize!(pa.refs, n)
     pa.refs[oldn+1:n] = zero(R)
@@ -395,10 +395,10 @@ Base.convert{T, R, N}(::Type{Array}, pa::PooledArray{T, R, N}) =
 ##############################################################################
 
 # Scalar case
-function Base.getindex(pa::PooledArray, I::Int)
+function Base.getindex(pa::PooledArray, I::Integer)
     return pa.pool[getindex(pa.refs, I)]
 end
-function Base.getindex(pa::PooledArray, I::Int...)
+function Base.getindex(pa::PooledArray, I::Integer...)
     return pa.pool[getindex(pa.refs, I...)]
 end
 
@@ -413,7 +413,7 @@ Base.getindex(A::PooledArray, I::AbstractVector) =
 Base.getindex(A::PooledArray, I::AbstractArray) =
     PooledArray(RefArray(getindex(A.refs, I)), copy(A.pool))
 
-function Base.setindex!(x::PooledArray, val, ind::Int)
+function Base.setindex!(x::PooledArray, val, ind::Integer)
     x.refs[ind] = getpoolidx(x, val)
     return x
 end
