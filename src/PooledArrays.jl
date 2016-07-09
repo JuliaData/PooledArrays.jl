@@ -16,7 +16,7 @@ type RefArray{R<:Integer,N}
     a::Array{R,N}
 end
 
-type PooledArray{T, R<:Integer, N} <: AbstractArray{T, N}
+immutable PooledArray{T, R<:Integer, N} <: AbstractArray{T, N}
     refs::Array{R, N}
     pool::Vector{T}
 
@@ -54,9 +54,8 @@ end
 PooledArray(d::PooledArray) = d
 
 # Constructor from array, pool, and ref type
-function PooledArray{T,R<:Integer,N}(d::AbstractArray{T, N},
-                                     pool::Vector{T},
-                                     r::Type{R} = DEFAULT_POOLED_REF_TYPE)
+function PooledArray{T,R<:Integer}(d::AbstractArray, pool::Vector{T},
+                                   r::Type{R} = DEFAULT_POOLED_REF_TYPE)
     if length(pool) > typemax(R)
         throw(ArgumentError("Cannot construct a PooledVector with type $R with a pool of size $(length(pool))"))
     end
@@ -77,13 +76,18 @@ function PooledArray{T,R<:Integer,N}(d::AbstractArray{T, N},
 end
 
 # Constructor from array and ref type
-function PooledArray{T,R<:Integer,N}(d::AbstractArray{T, N},
-                                     r::Type{R} = DEFAULT_POOLED_REF_TYPE)
-    pool = convert(Array, unique(d))
+function (::Type{PooledArray{T}}){T,R<:Integer}(d::AbstractArray,
+                                                r::Type{R} = DEFAULT_POOLED_REF_TYPE)
+    pool = convert(Vector{T}, unique(d))
     if method_exists(isless, (T, T))
         sort!(pool)
     end
     PooledArray(d, pool, r)
+end
+
+function PooledArray{T,R<:Integer}(d::AbstractArray{T},
+                                   r::Type{R} = DEFAULT_POOLED_REF_TYPE)
+    PooledArray{T}(d, r)
 end
 
 # Construct an empty PooledVector of a specific type
