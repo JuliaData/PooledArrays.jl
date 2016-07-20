@@ -195,6 +195,41 @@ function getpoolidx{T,R}(pa::PooledArray{T,R}, val::Any)
     return pool_idx
 end
 
+function Base.setindex!(x::PooledArray, val, ind::Integer)
+    x.refs[ind] = getpoolidx(x, val)
+    return x
+end
+
+##############################################################################
+##
+## map
+## Calls `f` only once per pool entry, plus preserves sortedness.
+##
+##############################################################################
+
+function Base.map{T,R<:Integer}(f, x::PooledArray{T,R})
+    newpool = map(f, x.pool)
+    uniquedpool = similar(newpool, 0)
+    lookup = similar(x.pool, Int)
+    n = 1
+    d = Dict{eltype(newpool), Int}()
+    @inbounds for i = 1:length(newpool)
+        el = newpool[i]
+        idx = get(d, el, 0)
+        if idx == 0
+            d[el] = n
+            idx = n
+            n += 1
+            push!(uniquedpool, el)
+        end
+        lookup[i] = idx
+    end
+    sp = sortperm(uniquedpool)
+    isp::Vector{Int} = invperm(sp)
+    PooledArray(RefArray(R[ isp[lookup[i]] for i in x.refs ]),
+                uniquedpool[sp])
+end
+
 ##############################################################################
 ##
 ## Replacement operations
@@ -226,7 +261,36 @@ end
 ## Sorting can use the pool to speed things up
 ##
 ##############################################################################
-#=
+
+function groupsort_indexer(x::AbstractVector, ngroups::Integer)
+    # translated from Wes McKinney's groupsort_indexer in pandas (file: src/groupby.pyx).
+
+    # count group sizes, location 0 for NA
+    n = length(x)
+    # counts = x.pool
+    counts = fill(0, ngroups + 1)
+    @inbounds for i = 1:n
+        counts[x[i] + 1] += 1
+    end
+
+    # mark the start of each contiguous group of like-indexed data
+    where = fill(1, ngroups + 1)
+    @inbounds for i = 2:ngroups+1
+        where[i] = where[i - 1] + counts[i - 1]
+    end
+
+    # this is our indexer
+    result = fill(0, n)
+    @inbounds for i = 1:n
+        label = x[i] + 1
+        result[where[label]] = i
+        where[label] += 1
+    end
+    result, where, counts
+end
+
+groupsort_indexer(pv::PooledVector) = groupsort_indexer(pv.refs, length(pv.pool))
+
 function Base.sortperm(pa::PooledArray; alg::Base.Sort.Algorithm=Base.Sort.DEFAULT_UNSTABLE,
                        lt::Function=isless, by::Function=identity,
                        rev::Bool=false, order=Base.Sort.Forward)
@@ -234,26 +298,24 @@ function Base.sortperm(pa::PooledArray; alg::Base.Sort.Algorithm=Base.Sort.DEFAU
 
     # TODO handle custom ordering efficiently
     if !isa(order, Base.Order.ForwardOrdering) && !isa(order, Base.Order.ReverseOrdering)
-        return sort!(collect(1:length(pda)), alg, Base.Order.Perm(order,pda))
+        return sort!(collect(1:length(pa)), alg, Base.Order.Perm(order,pa))
     end
 
-    # TODO handle non-sorted keys without copying
-    perm = issorted(pda.pool) ? groupsort_indexer(pda, true)[1] : sortperm(reorder(pda))
+    perm = groupsort_indexer(pa)[1]
     isa(order, Base.Order.ReverseOrdering) && reverse!(perm)
     perm
 end
 
-Base.sort(pda::PooledDataArray; kw...) = pda[sortperm(pda; kw...)]
+Base.sort(pa::PooledArray; kw...) = pa[sortperm(pa; kw...)]
 
-type FastPerm{O<:Base.Sort.Ordering,V<:AbstractVector} <: Base.Sort.Ordering
-    ord::O
-    vec::V
-end
-Base.sortperm{V}(x::AbstractVector, a::Base.Sort.Algorithm, o::FastPerm{Base.Sort.ForwardOrdering,V}) = x[sortperm(o.vec)]
-Base.sortperm{V}(x::AbstractVector, a::Base.Sort.Algorithm, o::FastPerm{Base.Sort.ReverseOrdering,V}) = x[reverse(sortperm(o.vec))]
-Perm{O<:Base.Sort.Ordering}(o::O, v::PooledDataVector) = FastPerm(o, v)
+#type FastPerm{O<:Base.Sort.Ordering,V<:AbstractVector} <: Base.Sort.Ordering
+#    ord::O
+#    vec::V
+#end
+#Base.sortperm{V}(x::AbstractVector, a::Base.Sort.Algorithm, o::FastPerm{Base.Sort.ForwardOrdering,V}) = x[sortperm(o.vec)]
+#Base.sortperm{V}(x::AbstractVector, a::Base.Sort.Algorithm, o::FastPerm{Base.Sort.ReverseOrdering,V}) = x[reverse(sortperm(o.vec))]
+#Perm{O<:Base.Sort.Ordering}(o::O, v::PooledVector) = FastPerm(o, v)
 
-=#
 #=
 function PooledDataVecs{S,Q<:Integer,R<:Integer,N}(v1::PooledDataArray{S,Q,N},
                                                    v2::PooledDataArray{S,R,N})
@@ -416,11 +478,6 @@ Base.getindex(A::PooledArray, I::AbstractVector) =
     PooledArray(RefArray(getindex(A.refs, I)), copy(A.pool))
 Base.getindex(A::PooledArray, I::AbstractArray) =
     PooledArray(RefArray(getindex(A.refs, I)), copy(A.pool))
-
-function Base.setindex!(x::PooledArray, val, ind::Integer)
-    x.refs[ind] = getpoolidx(x, val)
-    return x
-end
 
 ##############################################################################
 ##
