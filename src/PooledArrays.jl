@@ -76,8 +76,7 @@ function PooledArray{T,R<:Integer}(d::AbstractArray, pool::Vector{T},
 end
 
 # Constructor from array and ref type
-function (::Type{PooledArray{T}}){T,R<:Integer}(d::AbstractArray,
-                                                r::Type{R} = DEFAULT_POOLED_REF_TYPE)
+function (::Type{PooledArray{T}}){T,R<:Integer}(d::AbstractArray, r::Type{R})
     pool = convert(Vector{T}, unique(d))
     if method_exists(isless, (T, T))
         sort!(pool)
@@ -85,10 +84,19 @@ function (::Type{PooledArray{T}}){T,R<:Integer}(d::AbstractArray,
     PooledArray(d, pool, r)
 end
 
-function PooledArray{T,R<:Integer}(d::AbstractArray{T},
-                                   r::Type{R} = DEFAULT_POOLED_REF_TYPE)
-    PooledArray{T}(d, r)
+function (::Type{PooledArray{T}}){T}(d::AbstractArray)
+    pool = convert(Vector{T}, unique(d))
+    u = length(pool)
+    R = u < typemax(UInt8) ? UInt8 :
+        u < typemax(UInt16) ? UInt16 : UInt32
+    if method_exists(isless, (T, T))
+        sort!(pool)
+    end
+    PooledArray(d, pool, R)
 end
+
+PooledArray{T,R<:Integer}(d::AbstractArray{T}, r::Type{R}) = PooledArray{T}(d, r)
+PooledArray{T,R<:Integer}(d::AbstractArray{T}) = PooledArray{T}(d)
 
 # Construct an empty PooledVector of a specific type
 PooledArray(t::Type) = PooledArray(Array(t,0))
