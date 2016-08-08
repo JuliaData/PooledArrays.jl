@@ -96,7 +96,7 @@ function (::Type{PooledArray{T}}){T}(d::AbstractArray)
 end
 
 PooledArray{T,R<:Integer}(d::AbstractArray{T}, r::Type{R}) = PooledArray{T}(d, r)
-PooledArray{T,R<:Integer}(d::AbstractArray{T}) = PooledArray{T}(d)
+PooledArray{T}(d::AbstractArray{T}) = PooledArray{T}(d)
 
 # Construct an empty PooledVector of a specific type
 PooledArray(t::Type) = PooledArray(Array(t,0))
