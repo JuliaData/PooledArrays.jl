@@ -199,6 +199,17 @@ function getpoolidx{T,R}(pa::PooledArray{T,R}, val::Any)
                 "to a larger int type, or use the default ref type ($DEFAULT_POOLED_REF_TYPE)."
             ))
         end
+        if pool_idx > 1 && isless(val, pa.pool[pool_idx-1])
+            # maintain sorted order
+            sp = sortperm(pa.pool)
+            isp = invperm(sp)
+            refs = pa.refs
+            for i = 1:length(refs)
+                @inbounds refs[i] = isp[refs[i]]
+            end
+            pool_idx = isp[pool_idx]
+            copy!(pa.pool, pa.pool[sp])
+        end
     end
     return pool_idx
 end
