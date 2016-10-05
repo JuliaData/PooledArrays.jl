@@ -75,7 +75,15 @@ function PooledArray{T,R<:Integer}(d::AbstractArray, pool::Vector{T},
     return PooledArray(RefArray(newrefs), pool)
 end
 
-# Constructor from array and ref type
+"""
+    PooledArray(array, [reftype])
+
+Convert the given array to a PooledArray where each element will be referenced
+as an integer of the given type. If no `reftype` is specified one is chosen
+automatically based on the number of unique elements.
+"""
+PooledArray
+
 function (::Type{PooledArray{T}}){T,R<:Integer}(d::AbstractArray, r::Type{R})
     pool = convert(Vector{T}, unique(d))
     if method_exists(isless, (T, T))
@@ -104,19 +112,13 @@ PooledArray{R<:Integer}(t::Type, r::Type{R}) = PooledArray(Array(t,0), r)
 
 ##############################################################################
 ##
-## Basic size properties
+## Basic interface functions
 ##
 ##############################################################################
 
 Base.size(pa::PooledArray) = size(pa.refs)
 Base.length(pa::PooledArray) = length(pa.refs)
 Base.endof(pa::PooledArray) = endof(pa.refs)
-
-##############################################################################
-##
-## Copying
-##
-##############################################################################
 
 Base.copy(pa::PooledArray) = PooledArray(RefArray(copy(pa.refs)), copy(pa.pool))
 # TODO: Implement copy_to()
@@ -126,28 +128,6 @@ function Base.resize!{T,R}(pa::PooledArray{T,R,1}, n::Integer)
     resize!(pa.refs, n)
     pa.refs[oldn+1:n] = zero(R)
     pa
-end
-
-##############################################################################
-##
-## PooledArray utilities
-##
-##############################################################################
-
-function compact{T,R<:Integer,N}(d::PooledArray{T,R,N})
-    sz = length(d.pool)
-
-    REFTYPE = sz <= typemax(UInt8)  ? UInt8 :
-              sz <= typemax(UInt16) ? UInt16 :
-              sz <= typemax(UInt32) ? UInt32 :
-                                      UInt64
-
-    if REFTYPE == R
-        return d
-    end
-
-    newrefs = convert(Array{REFTYPE, N}, d.refs)
-    PooledArray(RefArray(newrefs), d.pool)
 end
 
 Base.reverse(x::PooledArray) = PooledArray(RefArray(reverse(x.refs)), x.pool)
@@ -162,62 +142,11 @@ function Base.ipermute!!{T<:Integer}(x::PooledArray, p::AbstractVector{T})
     x
 end
 
-##############################################################################
-##
-## similar()
-##
-##############################################################################
-
 function Base.similar{T,R}(pa::PooledArray{T,R}, S::Type, dims::Dims)
     PooledArray(RefArray(zeros(R, dims)), S[])
 end
 
-##############################################################################
-##
-## find()
-##
-##############################################################################
-
 Base.find(pdv::PooledVector{Bool}) = find(convert(Vector{Bool}, pdv, false))
-
-##############################################################################
-##
-## setindex!() definitions
-##
-##############################################################################
-
-function getpoolidx{T,R}(pa::PooledArray{T,R}, val::Any)
-    val::T = convert(T,val)
-    pool_idx = findfirst(pa.pool, val)
-    if pool_idx <= 0
-        push!(pa.pool, val)
-        pool_idx = length(pa.pool)
-        if pool_idx > typemax(R)
-            throw(ErrorException(
-                "You're using a PooledArray with ref type $R, which can only hold $(int(typemax(R))) values,\n",
-                "and you just tried to add the $(typemax(R)+1)th reference.  Please change the ref type\n",
-                "to a larger int type, or use the default ref type ($DEFAULT_POOLED_REF_TYPE)."
-            ))
-        end
-        if pool_idx > 1 && isless(val, pa.pool[pool_idx-1])
-            # maintain sorted order
-            sp = sortperm(pa.pool)
-            isp = invperm(sp)
-            refs = pa.refs
-            for i = 1:length(refs)
-                @inbounds refs[i] = isp[refs[i]]
-            end
-            pool_idx = isp[pool_idx]
-            copy!(pa.pool, pa.pool[sp])
-        end
-    end
-    return pool_idx
-end
-
-function Base.setindex!(x::PooledArray, val, ind::Integer)
-    x.refs[ind] = getpoolidx(x, val)
-    return x
-end
 
 ##############################################################################
 ##
@@ -247,32 +176,6 @@ function Base.map{T,R<:Integer}(f, x::PooledArray{T,R})
     isp::Vector{Int} = invperm(sp)
     PooledArray(RefArray(R[ isp[lookup[i]] for i in x.refs ]),
                 uniquedpool[sp])
-end
-
-##############################################################################
-##
-## Replacement operations
-##
-##############################################################################
-
-function replace!{R, S, T}(x::PooledArray{R}, fromval::S, toval::T)
-    # throw error if fromval isn't in the pool
-    fromidx = findfirst(x.pool, fromval)
-    if fromidx == 0
-        throw(ErrorException("can't replace a value not in the pool in a PooledArray!"))
-    end
-
-    # if toval is in the pool too, use that and remove fromval from the pool
-    toidx = findfirst(x.pool, toval)
-    if toidx != 0
-        x.refs[x.refs .== fromidx] = toidx
-        #x.pool[fromidx] = None    TODO: what to do here??
-    else
-        # otherwise, toval is new, swap it in
-        x.pool[fromidx] = toval
-    end
-
-    return toval
 end
 
 ##############################################################################
@@ -335,101 +238,6 @@ Base.sort(pa::PooledArray; kw...) = pa[sortperm(pa; kw...)]
 #Base.sortperm{V}(x::AbstractVector, a::Base.Sort.Algorithm, o::FastPerm{Base.Sort.ReverseOrdering,V}) = x[reverse(sortperm(o.vec))]
 #Perm{O<:Base.Sort.Ordering}(o::O, v::PooledVector) = FastPerm(o, v)
 
-#=
-function PooledDataVecs{S,Q<:Integer,R<:Integer,N}(v1::PooledDataArray{S,Q,N},
-                                                   v2::PooledDataArray{S,R,N})
-    pool = sort(unique([v1.pool; v2.pool]))
-    sz = length(pool)
-
-    REFTYPE = sz <= typemax(UInt8)  ? UInt8 :
-              sz <= typemax(UInt16) ? UInt16 :
-              sz <= typemax(UInt32) ? UInt32 :
-                                      UInt64
-
-    tidx1 = convert(Vector{REFTYPE}, findat(pool, v1.pool))
-    tidx2 = convert(Vector{REFTYPE}, findat(pool, v2.pool))
-    refs1 = zeros(REFTYPE, length(v1))
-    refs2 = zeros(REFTYPE, length(v2))
-    for i in 1:length(refs1)
-        if v1.refs[i] != 0
-            refs1[i] = tidx1[v1.refs[i]]
-        end
-    end
-    for i in 1:length(refs2)
-        if v2.refs[i] != 0
-            refs2[i] = tidx2[v2.refs[i]]
-        end
-    end
-    return (PooledDataArray(RefArray(refs1), pool),
-            PooledDataArray(RefArray(refs2), pool))
-end
-
-function PooledDataVecs{S,R<:Integer,N}(v1::PooledDataArray{S,R,N},
-                                        v2::AbstractArray{S,N})
-    return PooledDataVecs(v1,
-                          PooledDataArray(v2))
-end
-
-####
-function PooledDataVecs{S,R<:Integer,N}(v1::AbstractArray{S,N},
-                                        v2::PooledDataArray{S,R,N})
-    return PooledDataVecs(PooledDataArray(v1),
-                          v2)
-end
-
-function PooledDataVecs(v1::AbstractArray,
-                        v2::AbstractArray)
-
-    ## Return two PooledDataVecs that share the same pool.
-
-    ## TODO: allow specification of REFTYPE
-    refs1 = Array(DEFAULT_POOLED_REF_TYPE, size(v1))
-    refs2 = Array(DEFAULT_POOLED_REF_TYPE, size(v2))
-    poolref = Dict{promote_type(eltype(v1), eltype(v2)), DEFAULT_POOLED_REF_TYPE}()
-    maxref = 0
-
-    # loop through once to fill the poolref dict
-    for i = 1:length(v1)
-        if !isna(v1[i])
-            poolref[v1[i]] = 0
-        end
-    end
-    for i = 1:length(v2)
-        if !isna(v2[i])
-            poolref[v2[i]] = 0
-        end
-    end
-
-    # fill positions in poolref
-    pool = sort(collect(keys(poolref)))
-    i = 1
-    for p in pool
-        poolref[p] = i
-        i += 1
-    end
-
-    # fill in newrefs
-    zeroval = zero(DEFAULT_POOLED_REF_TYPE)
-    for i = 1:length(v1)
-        if isna(v1[i])
-            refs1[i] = zeroval
-        else
-            refs1[i] = poolref[v1[i]]
-        end
-    end
-    for i = 1:length(v2)
-        if isna(v2[i])
-            refs2[i] = zeroval
-        else
-            refs2[i] = poolref[v2[i]]
-        end
-    end
-
-    return (PooledDataArray(RefArray(refs1), pool),
-            PooledDataArray(RefArray(refs2), pool))
-end
-=#
-
 ##############################################################################
 ##
 ## conversions
@@ -464,14 +272,11 @@ function Base.convert{S, T, R, N}(::Type{Array{S, N}}, pa::PooledArray{T, R, N})
     return res
 end
 
-Base.convert{T, R}(::Type{Vector}, pv::PooledVector{T, R}) =
-    convert(Array{T, 1}, pv)
+Base.convert{T, R}(::Type{Vector}, pv::PooledVector{T, R}) = convert(Array{T, 1}, pv)
 
-Base.convert{T, R}(::Type{Matrix}, pm::PooledMatrix{T, R}) =
-    convert(Array{T, 2}, pm)
+Base.convert{T, R}(::Type{Matrix}, pm::PooledMatrix{T, R}) = convert(Array{T, 2}, pm)
 
-Base.convert{T, R, N}(::Type{Array}, pa::PooledArray{T, R, N}) =
-    convert(Array{T, N}, pa)
+Base.convert{T, R, N}(::Type{Array}, pa::PooledArray{T, R, N}) = convert(Array{T, N}, pa)
 
 ##############################################################################
 ##
@@ -497,6 +302,45 @@ Base.getindex(A::PooledArray, I::AbstractVector) =
     PooledArray(RefArray(getindex(A.refs, I)), copy(A.pool))
 Base.getindex(A::PooledArray, I::AbstractArray) =
     PooledArray(RefArray(getindex(A.refs, I)), copy(A.pool))
+
+##############################################################################
+##
+## setindex!() definitions
+##
+##############################################################################
+
+function getpoolidx{T,R}(pa::PooledArray{T,R}, val::Any)
+    val::T = convert(T,val)
+    pool_idx = findfirst(pa.pool, val)
+    if pool_idx <= 0
+        push!(pa.pool, val)
+        pool_idx = length(pa.pool)
+        if pool_idx > typemax(R)
+            throw(ErrorException(
+                "You're using a PooledArray with ref type $R, which can only hold $(int(typemax(R))) values,\n",
+                "and you just tried to add the $(typemax(R)+1)th reference.  Please change the ref type\n",
+                "to a larger int type, or use the default ref type ($DEFAULT_POOLED_REF_TYPE)."
+            ))
+        end
+        if pool_idx > 1 && isless(val, pa.pool[pool_idx-1])
+            # maintain sorted order
+            sp = sortperm(pa.pool)
+            isp = invperm(sp)
+            refs = pa.refs
+            for i = 1:length(refs)
+                @inbounds refs[i] = isp[refs[i]]
+            end
+            pool_idx = isp[pool_idx]
+            copy!(pa.pool, pa.pool[sp])
+        end
+    end
+    return pool_idx
+end
+
+function Base.setindex!(x::PooledArray, val, ind::Integer)
+    x.refs[ind] = getpoolidx(x, val)
+    return x
+end
 
 ##############################################################################
 ##
