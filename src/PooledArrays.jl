@@ -12,15 +12,15 @@ const DEFAULT_POOLED_REF_TYPE = UInt32
 
 # This is used as a wrapper during PooledArray construction only, to distinguish
 # arrays of pool indices from normal arrays
-type RefArray{R<:Integer,N}
-    a::Array{R,N}
+type RefArray{R}
+    a::R
 end
 
-immutable PooledArray{T, R<:Integer, N} <: AbstractArray{T, N}
-    refs::Array{R, N}
+immutable PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
+    refs::RA
     pool::Vector{T}
 
-    function PooledArray(rs::RefArray{R, N}, p::Vector{T})
+    function PooledArray(rs::RefArray{RA}, p::Vector{T})
         # refs mustn't overflow pool
         if length(rs.a) > 0 && maximum(rs.a) > prod(size(p))
             throw(ArgumentError("Reference array points beyond the end of the pool"))
@@ -46,8 +46,8 @@ typealias PooledMatrix{T,R} PooledArray{T,R,2}
 ##############################################################################
 
 # Echo inner constructor as an outer constructor
-function PooledArray{T,R<:Integer,N}(refs::RefArray{R, N}, pool::Vector{T})
-    PooledArray{T,R,N}(refs, pool)
+function PooledArray{T,R}(refs::RefArray{R}, pool::Vector{T})
+    PooledArray{T,eltype(R),ndims(R),R}(refs, pool)
 end
 
 # A no-op constructor
