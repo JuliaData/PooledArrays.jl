@@ -62,7 +62,7 @@ function PooledArray{T,R<:Integer}(d::AbstractArray, pool::Vector{T},
         throw(ArgumentError("Cannot construct a PooledVector with type $R with a pool of size $(length(pool))"))
     end
 
-    newrefs = Array(R, size(d))
+    newrefs = Array{R}(size(d))
     poolref = Dict{T, R}()
 
     # loop through once to fill the poolref dict
