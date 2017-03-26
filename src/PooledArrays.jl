@@ -1,3 +1,5 @@
+__precompile__()
+
 module PooledArrays
 
 export PooledArray
@@ -12,15 +14,15 @@ const DEFAULT_POOLED_REF_TYPE = UInt32
 
 # This is used as a wrapper during PooledArray construction only, to distinguish
 # arrays of pool indices from normal arrays
-type RefArray{R<:Integer,N}
-    a::Array{R,N}
+type RefArray{R}
+    a::R
 end
 
-immutable PooledArray{T, R<:Integer, N} <: AbstractArray{T, N}
-    refs::Array{R, N}
+immutable PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
+    refs::RA
     pool::Vector{T}
 
-    function PooledArray(rs::RefArray{R, N}, p::Vector{T})
+    function PooledArray(rs::RefArray{RA}, p::Vector{T})
         # refs mustn't overflow pool
         if length(rs.a) > 0 && maximum(rs.a) > prod(size(p))
             throw(ArgumentError("Reference array points beyond the end of the pool"))
@@ -46,8 +48,8 @@ typealias PooledMatrix{T,R} PooledArray{T,R,2}
 ##############################################################################
 
 # Echo inner constructor as an outer constructor
-function PooledArray{T,R<:Integer,N}(refs::RefArray{R, N}, pool::Vector{T})
-    PooledArray{T,R,N}(refs, pool)
+function PooledArray{T,R}(refs::RefArray{R}, pool::Vector{T})
+    PooledArray{T,eltype(R),ndims(R),R}(refs, pool)
 end
 
 # A no-op constructor
@@ -60,7 +62,7 @@ function PooledArray{T,R<:Integer}(d::AbstractArray, pool::Vector{T},
         throw(ArgumentError("Cannot construct a PooledVector with type $R with a pool of size $(length(pool))"))
     end
 
-    newrefs = Array(R, size(d))
+    newrefs = Array{R}(size(d))
     poolref = Dict{T, R}()
 
     # loop through once to fill the poolref dict
@@ -267,7 +269,9 @@ Base.convert(::Type{PooledArray}, a::AbstractArray) =
 function Base.convert{S, T, R, N}(::Type{Array{S, N}}, pa::PooledArray{T, R, N})
     res = Array(S, size(pa))
     for i in 1:length(pa)
-        res[i] = pa.pool[pa.refs[i]]
+        if pa.refs[i] != 0
+            res[i] = pa.pool[pa.refs[i]]
+        end
     end
     return res
 end
@@ -313,28 +317,36 @@ function getpoolidx{T,R}(pa::PooledArray{T,R}, val::Any)
     val::T = convert(T,val)
     pool_idx = findfirst(pa.pool, val)
     if pool_idx <= 0
-        push!(pa.pool, val)
-        pool_idx = length(pa.pool)
-        if pool_idx > typemax(R)
-            throw(ErrorException(
-                "You're using a PooledArray with ref type $R, which can only hold $(int(typemax(R))) values,\n",
-                "and you just tried to add the $(typemax(R)+1)th reference.  Please change the ref type\n",
-                "to a larger int type, or use the default ref type ($DEFAULT_POOLED_REF_TYPE)."
-            ))
-        end
-        if pool_idx > 1 && isless(val, pa.pool[pool_idx-1])
-            # maintain sorted order
-            sp = sortperm(pa.pool)
-            isp = invperm(sp)
-            refs = pa.refs
-            for i = 1:length(refs)
-                @inbounds refs[i] = isp[refs[i]]
-            end
-            pool_idx = isp[pool_idx]
-            copy!(pa.pool, pa.pool[sp])
-        end
+        pool_idx = unsafe_pool_push!(pa, val)
     end
     return pool_idx
+end
+
+function unsafe_pool_push!{T,R}(pa::PooledArray{T,R}, val)
+    push!(pa.pool, val)
+    pool_idx = length(pa.pool)
+    if pool_idx > typemax(R)
+        throw(ErrorException(string(
+            "You're using a PooledArray with ref type $R, which can only hold $(Int(typemax(R))) values,\n",
+            "and you just tried to add the $(typemax(R)+1)th reference.  Please change the ref type\n",
+            "to a larger int type, or use the default ref type ($DEFAULT_POOLED_REF_TYPE)."
+           )))
+    end
+    if pool_idx > 1 && isless(val, pa.pool[pool_idx-1])
+        # maintain sorted order
+        sp = sortperm(pa.pool)
+        isp = invperm(sp)
+        refs = pa.refs
+        for i = 1:length(refs)
+            # after resize we might have some 0s
+            if refs[i] != 0
+                @inbounds refs[i] = isp[refs[i]]
+            end
+        end
+        pool_idx = isp[pool_idx]
+        copy!(pa.pool, pa.pool[sp])
+    end
+    pool_idx
 end
 
 function Base.setindex!(x::PooledArray, val, ind::Integer)
