@@ -22,16 +22,16 @@ immutable PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
     refs::RA
     pool::Vector{T}
 
-    function PooledArray(rs::RefArray{RA}, p::Vector{T})
+    function (::Type{PooledArray}){T,R,N,RA<:AbstractArray{R, N}}(rs::RefArray{RA}, p::Vector{T})
         # refs mustn't overflow pool
         if length(rs.a) > 0 && maximum(rs.a) > prod(size(p))
             throw(ArgumentError("Reference array points beyond the end of the pool"))
         end
-        new(rs.a,p)
+        new{T,R,N,RA}(rs.a,p)
     end
 end
-typealias PooledVector{T,R} PooledArray{T,R,1}
-typealias PooledMatrix{T,R} PooledArray{T,R,2}
+const PooledVector{T,R} = PooledArray{T,R,1}
+const PooledMatrix{T,R} = PooledArray{T,R,2}
 
 ##############################################################################
 ##
@@ -267,7 +267,7 @@ Base.convert(::Type{PooledArray}, a::AbstractArray) =
     PooledArray(a)
 
 function Base.convert{S, T, R, N}(::Type{Array{S, N}}, pa::PooledArray{T, R, N})
-    res = Array(S, size(pa))
+    res = Array{S}(size(pa))
     for i in 1:length(pa)
         if pa.refs[i] != 0
             res[i] = pa.pool[pa.refs[i]]
