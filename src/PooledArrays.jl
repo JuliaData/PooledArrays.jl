@@ -315,8 +315,8 @@ Base.getindex(A::PooledArray, I::AbstractArray) =
 
 function getpoolidx{T,R}(pa::PooledArray{T,R}, val::Any)
     val::T = convert(T,val)
-    pool_idx = findfirst(pa.pool, val)
-    if pool_idx <= 0
+    pool_idx = searchsortedfirst(pa.pool, val)
+    if pool_idx > length(pa.pool) || pa.pool[pool_idx] != val
         pool_idx = unsafe_pool_push!(pa, val)
     end
     return pool_idx
