@@ -7,7 +7,7 @@ let a = rand(10), b = rand(10,10), c = rand(1:10, 1000)
     pc = PooledArray(c)
     @test pc == c
     @test convert(Array, pc) == c
-    @test issorted(pc.pool)
+    #@test issorted(pc.pool)
 
     @test copy(pc) == pc
 
@@ -23,7 +23,10 @@ let a = rand(10), b = rand(10,10), c = rand(1:10, 1000)
     push!(pc, -10)
     push!(c, -10)
     @test pc == c
-    @test issorted(pc.pool)
+    @test maximum(values(pc.pool)) == 11
+    @test maximum(keys(pc.revpool)) == 11
+
+    #@test issorted(pc.pool)
 
     @test map(identity, pc) == pc
     @test map(x->2x, pc) == map(x->2x, c)
