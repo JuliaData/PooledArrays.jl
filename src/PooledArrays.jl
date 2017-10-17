@@ -378,4 +378,33 @@ Base.shift!(pv::PooledVector) = pv.pool[shift!(pv.refs)]
 
 Base.empty!(pv::PooledVector) = (empty!(pv.refs); pv)
 
+function Base.vcat(a::PooledArray, b::PooledArray)
+    ap = a.pool
+    bp = b.pool
+
+    poolmap = Dict{Int, Int}()
+    l = length(ap)
+    for (i, x) in enumerate(bp)
+        if x in ap
+            poolmap[i] = findfirst(ap, x)
+        else
+            poolmap[i] = (l+=1)
+        end
+    end
+    newpool = Array{promote_type(eltype(a), eltype(b))}(l)
+    for i = 1:length(ap)
+        newpool[i] = ap[i]
+    end
+    invmap = Dict(v=>k for (k, v) in poolmap)
+    for i = length(ap)+1:l
+        newpool[i] = bp[invmap[i]]
+    end
+    refs2 = map(r->poolmap[r], b.refs)
+    types = [UInt8, UInt16, UInt32, UInt64]
+    tidx = findfirst(t->l < typemax(t), types)
+    T = types[tidx]
+    newrefs = Base.typed_vcat(T, a.refs, refs2)
+    return PooledArray(RefArray(newrefs), newpool)
+end
+
 end
