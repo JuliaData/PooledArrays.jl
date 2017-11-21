@@ -27,4 +27,9 @@ let a = rand(10), b = rand(10,10), c = rand(1:10, 1000)
 
     @test map(identity, pc) == pc
     @test map(x->2x, pc) == map(x->2x, c)
+
+    px = PooledArray(rand(128))
+    py = PooledArray(rand(200))
+
+    @test isa(vcat(px, py), PooledArray{Float64, UInt16})
 end
