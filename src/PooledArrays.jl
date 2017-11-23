@@ -69,7 +69,7 @@ function _label{T, I<:Integer}(xs::AbstractArray{T},
                                start = 1,
                                labels = Array{I}(size(xs)),
                                pool::Dict{T,I} = Dict{T, I}(),
-                               nlabels = zero(I),
+                               nlabels = 0,
                               )
 
     @inbounds for i in start:length(xs)
@@ -83,10 +83,8 @@ function _label{T, I<:Integer}(xs::AbstractArray{T},
                 return _label(xs, I2, i, convert(Vector{I2}, labels),
                               convert(Dict{T, I2}, pool), nlabels)
             end
-            nlabels += one(I)
-            lbl = nlabels
-            labels[i] = lbl
-            pool[x] = lbl
+            nlabels += 1
+            labels[i] = convert(I, nlabels)
         end
     end
     labels, pool
