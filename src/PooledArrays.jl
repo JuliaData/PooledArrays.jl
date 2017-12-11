@@ -85,6 +85,7 @@ function _label{T, I<:Integer}(xs::AbstractArray{T},
             end
             nlabels += 1
             labels[i] = convert(I, nlabels)
+            pool[x] = convert(I, nlabels)
         end
     end
     labels, pool
