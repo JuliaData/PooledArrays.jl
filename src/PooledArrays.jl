@@ -378,6 +378,18 @@ Base.shift!(pv::PooledVector) = pv.pool[shift!(pv.refs)]
 
 Base.empty!(pv::PooledVector) = (empty!(pv.refs); pv)
 
+function Base.vcat(a::PooledArray{S}, b::Array{T}) where {S,T}
+    output = Array{promote_type(S, T)}(length(b) + length(a))
+    copy!(output, 1, a, 1, length(a))
+    copy!(output, length(a)+1, b, 1, length(b))
+end
+
+function Base.vcat(a::Array{T}, b::PooledArray{S}) where {T,S}
+    output = Array{promote_type(S, T)}(length(b) + length(a))
+    copy!(output, 1, a, 1, length(a))
+    copy!(output, length(a)+1, b, 1, length(b))
+end
+
 function Base.vcat(a::PooledArray, b::PooledArray)
     ap = a.pool
     bp = b.pool
