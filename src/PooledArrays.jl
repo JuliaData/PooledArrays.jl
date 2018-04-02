@@ -220,11 +220,11 @@ end
 
 function Base.sortperm(pa::PooledArray; alg::Base.Sort.Algorithm=Base.Sort.DEFAULT_UNSTABLE,
                        lt::Function=isless, by::Function=identity,
-                       rev::Bool=false, order=Base.Sort.Forward)
-    order = Base.ord(lt, by, rev, order)
-    perm = sortperm([pa.revpool[i] for i=1:length(pa.pool)], alg=alg, order=order)
+                       rev::Bool=false, order=Base.Sort.Forward,
+                       _ord = Base.ord(lt, by, rev, order),
+                       poolperm = sortperm([pa.revpool[i] for i=1:length(pa.pool)], alg=alg, order=_ord))
 
-    groupsort_indexer(pa.refs, length(pa.pool), perm)[1]
+    groupsort_indexer(pa.refs, length(pa.pool), poolperm)[1]
 end
 
 Base.sort(pa::PooledArray; kw...) = pa[sortperm(pa; kw...)]
