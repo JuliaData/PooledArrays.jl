@@ -31,12 +31,12 @@ type PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
     pool::Dict{T,R}
     revpool::Dict{R,T}
 
-    function (::Type{PooledArray}){T,R,N,RA<:AbstractArray{R, N}}(rs::RefArray{RA}, p::Dict{T, R})
+    function (::Type{PooledArray}){T,R,N,RA<:AbstractArray{R, N}}(rs::RefArray{RA}, p::Dict{T, R}, revpool=_invert(p))
         # refs mustn't overflow pool
         if length(rs.a) > 0 && maximum(rs.a) > length(p)
             throw(ArgumentError("Reference array points beyond the end of the pool"))
         end
-        new{T,R,N,RA}(rs.a,p,_invert(p))
+        new{T,R,N,RA}(rs.a,p,revpool)
     end
 end
 const PooledVector{T,R} = PooledArray{T,R,1}
@@ -375,33 +375,29 @@ function Base.vcat(a::Array{T}, b::PooledArray{S}) where {T,S}
     copy!(output, length(a)+1, b, 1, length(b))
 end
 
-function Base.vcat(a::PooledArray, b::PooledArray)
+function Base.vcat(a::PooledArray{T}, b::PooledArray{S}) where {T, S}
     ap = a.pool
     bp = b.pool
 
+    U = promote_type(T,S)
+
     poolmap = Dict{Int, Int}()
     l = length(ap)
-    for (i, x) in enumerate(bp)
-        if x in ap
-            poolmap[i] = findfirst(ap, x)
+    newlabels = Dict{U, Int}(ap)
+    for (x, i) in bp
+        j = if x in keys(ap)
+            poolmap[i] = ap[x]
         else
             poolmap[i] = (l+=1)
         end
+        newlabels[x] = j
     end
-    newpool = Array{promote_type(eltype(a), eltype(b))}(l)
-    for i = 1:length(ap)
-        newpool[i] = ap[i]
-    end
-    invmap = Dict(v=>k for (k, v) in poolmap)
-    for i = length(ap)+1:l
-        newpool[i] = bp[invmap[i]]
-    end
-    refs2 = map(r->poolmap[r], b.refs)
     types = [UInt8, UInt16, UInt32, UInt64]
     tidx = findfirst(t->l < typemax(t), types)
-    T = types[tidx]
-    newrefs = Base.typed_vcat(T, a.refs, refs2)
-    return PooledArray(RefArray(newrefs), newpool)
+    refT = types[tidx]
+    refs2 = map(r->convert(refT, poolmap[r]), b.refs)
+    newrefs = Base.typed_vcat(refT, a.refs, refs2)
+    return PooledArray(RefArray(newrefs), convert(Dict{U, refT}, newlabels))
 end
 
 end
