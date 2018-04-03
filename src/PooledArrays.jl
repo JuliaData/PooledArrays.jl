@@ -18,16 +18,25 @@ type RefArray{R}
     a::R
 end
 
-immutable PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
-    refs::RA
-    pool::Vector{T}
+function _invert{K,V}(d::Dict{K,V})
+    d1 = Dict{V,K}()
+    for (k, v) in d
+        d1[v] = k
+    end
+    d1
+end
 
-    function (::Type{PooledArray}){T,R,N,RA<:AbstractArray{R, N}}(rs::RefArray{RA}, p::Vector{T})
+type PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
+    refs::RA
+    pool::Dict{T,R}
+    revpool::Dict{R,T}
+
+    function (::Type{PooledArray}){T,R,N,RA<:AbstractArray{R, N}}(rs::RefArray{RA}, p::Dict{T, R}, revpool=_invert(p))
         # refs mustn't overflow pool
-        if length(rs.a) > 0 && maximum(rs.a) > prod(size(p))
+        if length(rs.a) > 0 && maximum(rs.a) > length(p)
             throw(ArgumentError("Reference array points beyond the end of the pool"))
         end
-        new{T,R,N,RA}(rs.a,p)
+        new{T,R,N,RA}(rs.a,p,revpool)
     end
 end
 const PooledVector{T,R} = PooledArray{T,R,1}
@@ -48,34 +57,45 @@ const PooledMatrix{T,R} = PooledArray{T,R,2}
 ##############################################################################
 
 # Echo inner constructor as an outer constructor
-function PooledArray{T,R}(refs::RefArray{R}, pool::Vector{T})
+function PooledArray{T,R}(refs::RefArray{R}, pool::Dict{T,R})
     PooledArray{T,eltype(R),ndims(R),R}(refs, pool)
 end
 
 # A no-op constructor
 PooledArray(d::PooledArray) = d
 
-# Constructor from array, pool, and ref type
-function PooledArray{T,R<:Integer}(d::AbstractArray, pool::Vector{T},
-                                   r::Type{R} = DEFAULT_POOLED_REF_TYPE)
-    if length(pool) > typemax(R)
-        throw(ArgumentError("Cannot construct a PooledVector with type $R with a pool of size $(length(pool))"))
-    end
+function _label{T, I<:Integer}(xs::AbstractArray{T},
+                               ::Type{I}=UInt8,
+                               start = 1,
+                               labels = Array{I}(size(xs)),
+                               pool::Dict{T,I} = Dict{T, I}(),
+                               nlabels = 0,
+                              )
 
-    newrefs = Array{R}(size(d))
-    poolref = Dict{T, R}()
-
-    # loop through once to fill the poolref dict
-    for i = 1:length(pool)
-        poolref[pool[i]] = i
+    @inbounds for i in start:length(xs)
+        x = xs[i]
+        lbl = get(pool, x, zero(I))
+        if lbl !== zero(I)
+            labels[i] = lbl
+        else
+            if nlabels == typemax(I)
+                I2 = _widen(I)
+                return _label(xs, I2, i, convert(Vector{I2}, labels),
+                              convert(Dict{T, I2}, pool), nlabels)
+            end
+            nlabels += 1
+            labels[i] = convert(I, nlabels)
+            pool[x] = convert(I, nlabels)
+        end
     end
-
-    # fill in newrefs
-    for i = 1:length(d)
-        newrefs[i] = get(poolref, d[i], 0)
-    end
-    return PooledArray(RefArray(newrefs), pool)
+    labels, pool
 end
+
+_widen(::Type{UInt8}) = UInt16
+_widen(::Type{UInt16}) = UInt32
+_widen(::Type{UInt32}) = UInt64
+
+# Constructor from array, pool, and ref type
 
 """
     PooledArray(array, [reftype])
@@ -87,22 +107,20 @@ automatically based on the number of unique elements.
 PooledArray
 
 function (::Type{PooledArray{T}}){T,R<:Integer}(d::AbstractArray, r::Type{R})
-    pool = convert(Vector{T}, unique(d))
-    if method_exists(isless, (T, T))
-        sort!(pool)
+    refs, pool = _label(d)
+
+    if length(pool) > typemax(R)
+        throw(ArgumentError("Cannot construct a PooledArray with type $R with a pool of size $(length(pool))"))
     end
-    PooledArray(d, pool, r)
+
+    refs1 = convert(Vector{R}, refs)
+    pool1 = convert(Dict{T,R}, pool)
+    PooledArray(RefArray(refs1), pool1)
 end
 
 function (::Type{PooledArray{T}}){T}(d::AbstractArray)
-    pool = convert(Vector{T}, unique(d))
-    u = length(pool)
-    R = u < typemax(UInt8) ? UInt8 :
-        u < typemax(UInt16) ? UInt16 : UInt32
-    if method_exists(isless, (T, T))
-        sort!(pool)
-    end
-    PooledArray(d, pool, R)
+    refs, pool = _label(d)
+    PooledArray(RefArray(refs), pool)
 end
 
 PooledArray{T,R<:Integer}(d::AbstractArray{T}, r::Type{R}) = PooledArray{T}(d, r)
@@ -145,7 +163,7 @@ function Base.ipermute!!{T<:Integer}(x::PooledArray, p::AbstractVector{T})
 end
 
 function Base.similar{T,R}(pa::PooledArray{T,R}, S::Type, dims::Dims)
-    PooledArray(RefArray(zeros(R, dims)), S[])
+    PooledArray(RefArray(zeros(R, dims)), Dict{S,R}())
 end
 
 Base.find(pdv::PooledVector{Bool}) = find(convert(Vector{Bool}, pdv, false))
@@ -153,31 +171,15 @@ Base.find(pdv::PooledVector{Bool}) = find(convert(Vector{Bool}, pdv, false))
 ##############################################################################
 ##
 ## map
-## Calls `f` only once per pool entry, plus preserves sortedness.
+## Calls `f` only once per pool entry.
 ##
 ##############################################################################
 
 function Base.map{T,R<:Integer}(f, x::PooledArray{T,R})
-    newpool = map(f, x.pool)
-    uniquedpool = similar(newpool, 0)
-    lookup = similar(x.pool, Int)
-    n = 1
-    d = Dict{eltype(newpool), Int}()
-    @inbounds for i = 1:length(newpool)
-        el = newpool[i]
-        idx = get(d, el, 0)
-        if idx == 0
-            d[el] = n
-            idx = n
-            n += 1
-            push!(uniquedpool, el)
-        end
-        lookup[i] = idx
-    end
-    sp = sortperm(uniquedpool)
-    isp::Vector{Int} = invperm(sp)
-    PooledArray(RefArray(R[ isp[lookup[i]] for i in x.refs ]),
-                uniquedpool[sp])
+    ks = collect(keys(x.pool))
+    vs = collect(values(x.pool))
+    newpool = Dict(zip(map(f, ks), vs))
+    PooledArray(RefArray(x.refs), newpool)
 end
 
 ##############################################################################
@@ -186,7 +188,7 @@ end
 ##
 ##############################################################################
 
-function groupsort_indexer(x::AbstractVector, ngroups::Integer)
+function groupsort_indexer(x::AbstractVector, ngroups::Integer, perm)
     # translated from Wes McKinney's groupsort_indexer in pandas (file: src/groupby.pyx).
 
     # count group sizes, location 0 for NA
@@ -196,6 +198,7 @@ function groupsort_indexer(x::AbstractVector, ngroups::Integer)
     @inbounds for i = 1:n
         counts[x[i] + 1] += 1
     end
+    counts[2:end] = counts[perm.+1]
 
     # mark the start of each contiguous group of like-indexed data
     where = fill(1, ngroups + 1)
@@ -205,29 +208,23 @@ function groupsort_indexer(x::AbstractVector, ngroups::Integer)
 
     # this is our indexer
     result = fill(0, n)
+    iperm = invperm(perm)
+
     @inbounds for i = 1:n
-        label = x[i] + 1
+        label = iperm[x[i]] + 1
         result[where[label]] = i
         where[label] += 1
     end
     result, where, counts
 end
 
-groupsort_indexer(pv::PooledVector) = groupsort_indexer(pv.refs, length(pv.pool))
-
 function Base.sortperm(pa::PooledArray; alg::Base.Sort.Algorithm=Base.Sort.DEFAULT_UNSTABLE,
                        lt::Function=isless, by::Function=identity,
-                       rev::Bool=false, order=Base.Sort.Forward)
-    order = Base.ord(lt, by, rev, order)
+                       rev::Bool=false, order=Base.Sort.Forward,
+                       _ord = Base.ord(lt, by, rev, order),
+                       poolperm = sortperm([pa.revpool[i] for i=1:length(pa.pool)], alg=alg, order=_ord))
 
-    # TODO handle custom ordering efficiently
-    if !isa(order, Base.Order.ForwardOrdering) && !isa(order, Base.Order.ReverseOrdering)
-        return sort!(collect(1:length(pa)), alg, Base.Order.Perm(order,pa))
-    end
-
-    perm = groupsort_indexer(pa)[1]
-    isa(order, Base.Order.ReverseOrdering) && reverse!(perm)
-    perm
+    groupsort_indexer(pa.refs, length(pa.pool), poolperm)[1]
 end
 
 Base.sort(pa::PooledArray; kw...) = pa[sortperm(pa; kw...)]
@@ -247,9 +244,9 @@ Base.sort(pa::PooledArray; kw...) = pa[sortperm(pa; kw...)]
 ##############################################################################
 
 Base.convert{S,T,R1<:Integer,R2<:Integer,N}(::Type{PooledArray{S,R1,N}}, pa::PooledArray{T,R2,N}) =
-    PooledArray(RefArray(convert(Array{R1,N}, pa.refs)), convert(Vector{S}, pa.pool))
+    PooledArray(RefArray(convert(Array{R1,N}, pa.refs)), convert(Dict{S,R1}, pa.pool))
 Base.convert{S,T,R<:Integer,N}(::Type{PooledArray{S,R,N}}, pa::PooledArray{T,R,N}) =
-    PooledArray(RefArray(copy(pa.refs)), convert(Vector{S}, pa.pool))
+    PooledArray(RefArray(copy(pa.refs)), convert(Dict{S,R}, pa.pool))
 Base.convert{T,R<:Integer,N}(::Type{PooledArray{T,R,N}}, pa::PooledArray{T,R,N}) = pa
 Base.convert{S,T,R1<:Integer,R2<:Integer,N}(::Type{PooledArray{S,R1}}, pa::PooledArray{T,R2,N}) =
     convert(PooledArray{S,R1,N}, pa)
@@ -270,7 +267,7 @@ function Base.convert{S, T, R, N}(::Type{Array{S, N}}, pa::PooledArray{T, R, N})
     res = Array{S}(size(pa))
     for i in 1:length(pa)
         if pa.refs[i] != 0
-            res[i] = pa.pool[pa.refs[i]]
+            res[i] = pa.revpool[pa.refs[i]]
         end
     end
     return res
@@ -290,10 +287,10 @@ Base.convert{T, R, N}(::Type{Array}, pa::PooledArray{T, R, N}) = convert(Array{T
 
 # Scalar case
 function Base.getindex(pa::PooledArray, I::Integer)
-    return pa.pool[getindex(pa.refs, I)]
+    return pa.revpool[getindex(pa.refs, I)]
 end
 function Base.getindex(pa::PooledArray, I::Integer...)
-    return pa.pool[getindex(pa.refs, I...)]
+    return pa.revpool[getindex(pa.refs, I...)]
 end
 
 # Vector case
@@ -315,37 +312,25 @@ Base.getindex(A::PooledArray, I::AbstractArray) =
 
 function getpoolidx{T,R}(pa::PooledArray{T,R}, val::Any)
     val::T = convert(T,val)
-    pool_idx = searchsortedfirst(pa.pool, val)
-    if pool_idx > length(pa.pool) || pa.pool[pool_idx] != val
+    pool_idx = get(pa.pool, val, zero(R))
+    if pool_idx == zero(R)
         pool_idx = unsafe_pool_push!(pa, val)
     end
     return pool_idx
 end
 
 function unsafe_pool_push!{T,R}(pa::PooledArray{T,R}, val)
-    push!(pa.pool, val)
-    pool_idx = length(pa.pool)
-    if pool_idx > typemax(R)
+    _pool_idx = length(pa.pool)+1
+    if _pool_idx > typemax(R)
         throw(ErrorException(string(
             "You're using a PooledArray with ref type $R, which can only hold $(Int(typemax(R))) values,\n",
             "and you just tried to add the $(typemax(R)+1)th reference.  Please change the ref type\n",
             "to a larger int type, or use the default ref type ($DEFAULT_POOLED_REF_TYPE)."
            )))
     end
-    if pool_idx > 1 && isless(val, pa.pool[pool_idx-1])
-        # maintain sorted order
-        sp = sortperm(pa.pool)
-        isp = invperm(sp)
-        refs = pa.refs
-        for i = 1:length(refs)
-            # after resize we might have some 0s
-            if refs[i] != 0
-                @inbounds refs[i] = isp[refs[i]]
-            end
-        end
-        pool_idx = isp[pool_idx]
-        copy!(pa.pool, pa.pool[sp])
-    end
+    pool_idx = convert(R, _pool_idx)
+    pa.pool[val] = pool_idx
+    pa.revpool[pool_idx] = val
     pool_idx
 end
 
@@ -390,33 +375,29 @@ function Base.vcat(a::Array{T}, b::PooledArray{S}) where {T,S}
     copy!(output, length(a)+1, b, 1, length(b))
 end
 
-function Base.vcat(a::PooledArray, b::PooledArray)
+function Base.vcat(a::PooledArray{T}, b::PooledArray{S}) where {T, S}
     ap = a.pool
     bp = b.pool
 
+    U = promote_type(T,S)
+
     poolmap = Dict{Int, Int}()
     l = length(ap)
-    for (i, x) in enumerate(bp)
-        if x in ap
-            poolmap[i] = findfirst(ap, x)
+    newlabels = Dict{U, Int}(ap)
+    for (x, i) in bp
+        j = if x in keys(ap)
+            poolmap[i] = ap[x]
         else
             poolmap[i] = (l+=1)
         end
+        newlabels[x] = j
     end
-    newpool = Array{promote_type(eltype(a), eltype(b))}(l)
-    for i = 1:length(ap)
-        newpool[i] = ap[i]
-    end
-    invmap = Dict(v=>k for (k, v) in poolmap)
-    for i = length(ap)+1:l
-        newpool[i] = bp[invmap[i]]
-    end
-    refs2 = map(r->poolmap[r], b.refs)
     types = [UInt8, UInt16, UInt32, UInt64]
     tidx = findfirst(t->l < typemax(t), types)
-    T = types[tidx]
-    newrefs = Base.typed_vcat(T, a.refs, refs2)
-    return PooledArray(RefArray(newrefs), newpool)
+    refT = types[tidx]
+    refs2 = map(r->convert(refT, poolmap[r]), b.refs)
+    newrefs = Base.typed_vcat(refT, a.refs, refs2)
+    return PooledArray(RefArray(newrefs), convert(Dict{U, refT}, newlabels))
 end
 
 end
