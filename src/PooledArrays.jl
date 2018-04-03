@@ -286,11 +286,14 @@ Base.convert{T, R, N}(::Type{Array}, pa::PooledArray{T, R, N}) = convert(Array{T
 ##############################################################################
 
 # Scalar case
-function Base.getindex(pa::PooledArray, I::Integer)
-    return pa.revpool[getindex(pa.refs, I)]
-end
 function Base.getindex(pa::PooledArray, I::Integer...)
-    return pa.revpool[getindex(pa.refs, I...)]
+    idx = pa.refs[I...]
+    iszero(idx) && throw(UndefRefError())
+    return pa.revpool[idx]
+end
+
+function Base.isassigned(pa::PooledArray, I::Int...)
+    !iszero(pa.refs[I...])
 end
 
 # Vector case
