@@ -366,19 +366,23 @@ Base.shift!(pv::PooledVector) = pv.pool[shift!(pv.refs)]
 
 Base.empty!(pv::PooledVector) = (empty!(pv.refs); pv)
 
-function Base.vcat(a::PooledArray{S}, b::Array{T}) where {S,T}
-    output = Array{promote_type(S, T)}(length(b) + length(a))
-    copy!(output, 1, a, 1, length(a))
-    copy!(output, length(a)+1, b, 1, length(b))
+function _vcat!(c,a,b)
+    copy!(c, 1, a, 1, length(a))
+    copy!(c, length(a)+1, b, 1, length(b))
 end
 
-function Base.vcat(a::Array{T}, b::PooledArray{S}) where {T,S}
-    output = Array{promote_type(S, T)}(length(b) + length(a))
-    copy!(output, 1, a, 1, length(a))
-    copy!(output, length(a)+1, b, 1, length(b))
+
+function Base.vcat(a::PooledArray{<:Any, <:Integer, 1}, b::AbstractArray{<:Any, 1})
+    output = similar(b, promote_type(eltype(a), eltype(b)), length(b) + length(a))
+    _vcat!(output, a, b)
 end
 
-function Base.vcat(a::PooledArray{T}, b::PooledArray{S}) where {T, S}
+function Base.vcat(a::AbstractArray{<:Any, 1}, b::PooledArray{<:Any, <:Integer, 1})
+    output = similar(b, promote_type(eltype(a), eltype(b)), length(b) + length(a))
+    _vcat!(output, a, b)
+end
+
+function Base.vcat(a::PooledArray{T, <:Integer, 1}, b::PooledArray{S, <:Integer, 1}) where {T, S}
     ap = a.pool
     bp = b.pool
 
