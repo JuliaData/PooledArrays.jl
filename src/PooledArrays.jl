@@ -378,7 +378,7 @@ function Base.vcat(a::PooledArray{<:Any, <:Integer, 1}, b::AbstractArray{<:Any, 
 end
 
 function Base.vcat(a::AbstractArray{<:Any, 1}, b::PooledArray{<:Any, <:Integer, 1})
-    output = similar(b, promote_type(eltype(a), eltype(b)), length(b) + length(a))
+    output = similar(a, promote_type(eltype(a), eltype(b)), length(b) + length(a))
     _vcat!(output, a, b)
 end
 
