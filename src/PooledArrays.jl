@@ -182,7 +182,7 @@ function Base.map{T,R<:Integer}(f, x::PooledArray{T,R})
     uks = Set(ks1)
     if length(uks) < length(ks1)
         # this means some keys have repeated
-        newpool = Dict{eltype(ks), eltype(vs)}()
+        newpool = Dict{eltype(ks1), eltype(vs)}()
         translate = Dict{eltype(vs), eltype(vs)}()
         i = 1
         for (k, k1) in zip(ks, ks1)
