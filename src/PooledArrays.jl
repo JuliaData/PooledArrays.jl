@@ -178,8 +178,28 @@ Base.find(pdv::PooledVector{Bool}) = find(convert(Vector{Bool}, pdv, false))
 function Base.map{T,R<:Integer}(f, x::PooledArray{T,R})
     ks = collect(keys(x.pool))
     vs = collect(values(x.pool))
-    newpool = Dict(zip(map(f, ks), vs))
-    PooledArray(RefArray(x.refs), newpool)
+    ks1 = map(f, ks)
+    uks = Set(ks1)
+    if length(uks) < length(ks1)
+        # this means some keys have repeated
+        newpool = Dict{eltype(ks), eltype(vs)}()
+        translate = Dict{eltype(vs), eltype(vs)}()
+        i = 1
+        for (k, k1) in zip(ks, ks1)
+            if haskey(newpool, k1)
+                translate[x.pool[k]] = newpool[k1]
+            else
+                newpool[k1] = i
+                translate[x.pool[k]] = i
+                i+=1
+            end
+        end
+        refarray = map(x->translate[x], x.refs)
+    else
+        newpool = Dict(zip(map(f, ks), vs))
+        refarray = copy(x.refs)
+    end
+    PooledArray(RefArray(refarray), newpool)
 end
 
 ##############################################################################

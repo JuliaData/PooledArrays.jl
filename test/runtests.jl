@@ -31,6 +31,10 @@ let a = rand(10), b = rand(10,10), c = rand(1:10, 1000)
     @test map(identity, pc) == pc
     @test map(x->2x, pc) == map(x->2x, c)
 
+    # case where the outputs are one-to-many
+    pa = PooledArray([1,2,3,4,5,6])
+    @test map(isodd, pa) == [1,0,1,0,1,0]
+
     px = PooledArray(rand(128))
     py = PooledArray(rand(200))
 
