@@ -67,7 +67,7 @@ PooledArray(d::PooledArray) = d
 function _label(xs::AbstractArray{T},
                 ::Type{I}=UInt8,
                 start = 1,
-                labels = Array{I}(size(xs)),
+                labels = Array{I}(undef, size(xs)),
                 pool::Dict{T,I} = Dict{T, I}(),
                 nlabels = 0,
                ) where {T, I<:Integer}
@@ -157,8 +157,8 @@ function Base.permute!!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
     x
 end
 
-function Base.ipermute!!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
-    Base.ipermute!!(x.refs, p)
+function Base.invpermute!!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
+    Base.invpermute!!(x.refs, p)
     x
 end
 
@@ -284,7 +284,7 @@ Base.convert(::Type{PooledArray}, a::AbstractArray) =
     PooledArray(a)
 
 function Base.convert(::Type{Array{S, N}}, pa::PooledArray{T, R, N}) where {S, T, R, N}
-    res = Array{S}(size(pa))
+    res = Array{S}(undef, size(pa))
     for i in 1:length(pa)
         if pa.refs[i] != 0
             res[i] = pa.revpool[pa.refs[i]]
