@@ -4,7 +4,7 @@ os:
   - linux
   - osx
 julia:
-  - 0.6
+  - latest
 notifications:
   email: false
 after_success:
