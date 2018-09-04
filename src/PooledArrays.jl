@@ -136,7 +136,7 @@ PooledArray(t::Type, r::Type{R}) where {R<:Integer} = PooledArray(Array(t,0), r)
 
 Base.size(pa::PooledArray) = size(pa.refs)
 Base.length(pa::PooledArray) = length(pa.refs)
-Base.endof(pa::PooledArray) = endof(pa.refs)
+Base.lastindex(pa::PooledArray) = lastindex(pa.refs)
 
 Base.copy(pa::PooledArray) = PooledArray(RefArray(copy(pa.refs)), copy(pa.pool))
 # TODO: Implement copy_to()
@@ -164,7 +164,7 @@ function Base.similar(pa::PooledArray{T,R}, S::Type, dims::Dims) where {T,R}
     PooledArray(RefArray(zeros(R, dims)), Dict{S,R}())
 end
 
-Base.find(pdv::PooledVector{Bool}) = findall(convert(Vector{Bool}, pdv, false))
+Base.findall(pdv::PooledVector{Bool}) = findall(convert(Vector{Bool}, pdv, false))
 
 ##############################################################################
 ##
@@ -374,13 +374,13 @@ end
 
 Base.pop!(pv::PooledVector) = pv.pool[pop!(pv.refs)]
 
-function Base.unshift!(pv::PooledVector{S,R}, v::T) where {S,R,T}
+function Base.pushfirst!(pv::PooledVector{S,R}, v::T) where {S,R,T}
     v = convert(S,v)
     pushfirst!(pv.refs, getpoolidx(pv, v))
     return v
 end
 
-Base.shift!(pv::PooledVector) = pv.pool[popfirst!(pv.refs)]
+Base.popfirst!(pv::PooledVector) = pv.pool[popfirst!(pv.refs)]
 
 Base.empty!(pv::PooledVector) = (empty!(pv.refs); pv)
 
