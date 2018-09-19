@@ -144,7 +144,7 @@ Base.copy(pa::PooledArray) = PooledArray(RefArray(copy(pa.refs)), copy(pa.pool))
 function Base.resize!(pa::PooledArray{T,R,1}, n::Integer) where {T,R}
     oldn = length(pa.refs)
     resize!(pa.refs, n)
-    pa.refs[oldn+1:n] = zero(R)
+    pa.refs[oldn+1:n] .= zero(R)
     pa
 end
 
@@ -385,8 +385,8 @@ Base.popfirst!(pv::PooledVector) = pv.pool[popfirst!(pv.refs)]
 Base.empty!(pv::PooledVector) = (empty!(pv.refs); pv)
 
 function _vcat!(c,a,b)
-    copy!(c, 1, a, 1, length(a))
-    copy!(c, length(a)+1, b, 1, length(b))
+    copyto!(c, 1, a, 1, length(a))
+    copyto!(c, length(a)+1, b, 1, length(b))
 end
 
 
