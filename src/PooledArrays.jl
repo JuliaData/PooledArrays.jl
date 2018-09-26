@@ -164,7 +164,7 @@ function Base.similar(pa::PooledArray{T,R}, S::Type, dims::Dims) where {T,R}
     PooledArray(RefArray(zeros(R, dims)), Dict{S,R}())
 end
 
-Base.findall(pdv::PooledVector{Bool}) = findall(convert(Vector{Bool}, pdv, false))
+Base.findall(pdv::PooledVector{Bool}) = findall(convert(Vector{Bool}, pdv))
 
 ##############################################################################
 ##

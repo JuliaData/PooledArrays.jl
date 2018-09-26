@@ -44,4 +44,6 @@ let a = rand(10), b = rand(10,10), c = rand(1:10, 1000)
     px2 = copy(px)
     resize!(px2, 100)
     @test px2 == px[1:100]
+
+    @test findall(PooledArray([true,false,true])) == [1,3]
 end
