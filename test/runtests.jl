@@ -46,4 +46,7 @@ let a = rand(10), b = rand(10,10), c = rand(1:10, 1000)
     @test px2 == px[1:100]
 
     @test findall(PooledArray([true,false,true])) == [1,3]
+
+    @test PooledVector == PooledArray{T, R, 1} where {T, R}
+    @test PooledMatrix == PooledArray{T, R, 2} where {T, R}
 end
