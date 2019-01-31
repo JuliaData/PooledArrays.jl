@@ -306,25 +306,25 @@ Base.convert(::Type{Array}, pa::PooledArray{T, R, N}) where {T, R, N} = convert(
 ##############################################################################
 
 # Scalar case
-function Base.getindex(pa::PooledArray, I::Integer...)
+Base.@propagate_inbounds function Base.getindex(pa::PooledArray, I::Integer...)
     idx = pa.refs[I...]
     iszero(idx) && throw(UndefRefError())
-    return pa.pool[idx]
+    return @inbounds pa.pool[idx]
 end
 
-function Base.isassigned(pa::PooledArray, I::Int...)
+Base.@propagate_inbounds function Base.isassigned(pa::PooledArray, I::Int...)
     !iszero(pa.refs[I...])
 end
 
 # Vector case
-function Base.getindex(A::PooledArray, I::Union{Real,AbstractVector}...)
+Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::Union{Real,AbstractVector}...)
     PooledArray(RefArray(getindex(A.refs, I...)), copy(A.revpool))
 end
 
 # Dispatch our implementation for these cases instead of Base
-Base.getindex(A::PooledArray, I::AbstractVector) =
+Base.@propagate_inbounds Base.getindex(A::PooledArray, I::AbstractVector) =
     PooledArray(RefArray(getindex(A.refs, I)), copy(A.revpool))
-Base.getindex(A::PooledArray, I::AbstractArray) =
+Base.@propagate_inbounds Base.getindex(A::PooledArray, I::AbstractArray) =
     PooledArray(RefArray(getindex(A.refs, I)), copy(A.revpool))
 
 ##############################################################################
@@ -357,7 +357,7 @@ function unsafe_pool_push!(pa::PooledArray{T,R}, val) where {T,R}
     pool_idx
 end
 
-function Base.setindex!(x::PooledArray, val, ind::Integer)
+Base.@propagate_inbounds function Base.setindex!(x::PooledArray, val, ind::Integer)
     x.refs[ind] = getpoolidx(x, val)
     return x
 end
