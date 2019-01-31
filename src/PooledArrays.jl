@@ -59,8 +59,7 @@ function PooledArray(refs::RefArray{R}, pool::Dict{T,R}) where {T,R}
     PooledArray{T,eltype(R),ndims(R),R}(refs, pool)
 end
 
-# A no-op constructor
-PooledArray(d::PooledArray) = d
+PooledArray(d::PooledArray) = copy(d)
 
 function _label(xs::AbstractArray{T},
                 ::Type{I}=UInt8,
