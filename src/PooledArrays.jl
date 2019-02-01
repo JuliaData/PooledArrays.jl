@@ -27,16 +27,16 @@ end
 mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
     refs::RA
     pool::Vector{T}
-    revpool::Dict{T,R}
+    invpool::Dict{T,R}
 
     function PooledArray(rs::RefArray{RA},
-                         revpool::Dict{T, R},
-                         pool=_invert(revpool)) where {T,R,N,RA<:AbstractArray{R, N}}
+                         invpool::Dict{T, R},
+                         pool=_invert(invpool)) where {T,R,N,RA<:AbstractArray{R, N}}
         # refs mustn't overflow pool
-        if length(rs.a) > 0 && maximum(rs.a) > length(revpool)
+        if length(rs.a) > 0 && maximum(rs.a) > length(invpool)
             throw(ArgumentError("Reference array points beyond the end of the pool"))
         end
-        new{T,R,N,RA}(rs.a,pool,revpool)
+        new{T,R,N,RA}(rs.a,pool,invpool)
     end
 end
 const PooledVector{T,R} = PooledArray{T,R,1}
@@ -57,8 +57,8 @@ const PooledMatrix{T,R} = PooledArray{T,R,2}
 ##############################################################################
 
 # Echo inner constructor as an outer constructor
-function PooledArray(refs::RefArray{R}, revpool::Dict{T,R}) where {T,R}
-    PooledArray{T,eltype(R),ndims(R),R}(refs, revpool)
+function PooledArray(refs::RefArray{R}, invpool::Dict{T,R}) where {T,R}
+    PooledArray{T,eltype(R),ndims(R),R}(refs, invpool)
 end
 
 # A no-op constructor
@@ -68,34 +68,34 @@ function _label(xs::AbstractArray{T},
                 ::Type{I}=UInt8,
                 start = 1,
                 labels = Array{I}(undef, size(xs)),
-                revpool::Dict{T,I} = Dict{T, I}(),
+                invpool::Dict{T,I} = Dict{T, I}(),
                 nlabels = 0,
                ) where {T, I<:Integer}
 
     @inbounds for i in start:length(xs)
         x = xs[i]
-        lbl = get(revpool, x, zero(I))
+        lbl = get(invpool, x, zero(I))
         if lbl !== zero(I)
             labels[i] = lbl
         else
             if nlabels == typemax(I)
                 I2 = _widen(I)
                 return _label(xs, I2, i, convert(Vector{I2}, labels),
-                              convert(Dict{T, I2}, revpool), nlabels)
+                              convert(Dict{T, I2}, invpool), nlabels)
             end
             nlabels += 1
             labels[i] = convert(I, nlabels)
-            revpool[x] = convert(I, nlabels)
+            invpool[x] = convert(I, nlabels)
         end
     end
-    labels, revpool
+    labels, invpool
 end
 
 _widen(::Type{UInt8}) = UInt16
 _widen(::Type{UInt16}) = UInt32
 _widen(::Type{UInt32}) = UInt64
 
-# Constructor from array, revpool, and ref type
+# Constructor from array, invpool, and ref type
 
 """
     PooledArray(array, [reftype])
@@ -107,20 +107,20 @@ automatically based on the number of unique elements.
 PooledArray
 
 function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
-    refs, revpool = _label(d)
+    refs, invpool = _label(d)
 
-    if length(revpool) > typemax(R)
+    if length(invpool) > typemax(R)
         throw(ArgumentError("Cannot construct a PooledArray with type $R with a pool of size $(length(pool))"))
     end
 
     refs1 = convert(Vector{R}, refs)
-    revpool1 = convert(Dict{T,R}, revpool)
-    PooledArray(RefArray(refs1), revpool1)
+    invpool1 = convert(Dict{T,R}, invpool)
+    PooledArray(RefArray(refs1), invpool1)
 end
 
 function PooledArray{T}(d::AbstractArray) where T
-    refs, revpool = _label(d)
-    PooledArray(RefArray(refs), revpool)
+    refs, invpool = _label(d)
+    PooledArray(RefArray(refs), invpool)
 end
 
 PooledArray(d::AbstractArray{T}, r::Type{R}) where {T,R<:Integer} = PooledArray{T}(d, r)
@@ -140,7 +140,7 @@ Base.size(pa::PooledArray) = size(pa.refs)
 Base.length(pa::PooledArray) = length(pa.refs)
 Base.lastindex(pa::PooledArray) = lastindex(pa.refs)
 
-Base.copy(pa::PooledArray) = PooledArray(RefArray(copy(pa.refs)), copy(pa.revpool))
+Base.copy(pa::PooledArray) = PooledArray(RefArray(copy(pa.refs)), copy(pa.invpool))
 # TODO: Implement copy_to()
 
 function Base.resize!(pa::PooledArray{T,R,1}, n::Integer) where {T,R}
@@ -150,7 +150,7 @@ function Base.resize!(pa::PooledArray{T,R,1}, n::Integer) where {T,R}
     pa
 end
 
-Base.reverse(x::PooledArray) = PooledArray(RefArray(reverse(x.refs)), x.revpool)
+Base.reverse(x::PooledArray) = PooledArray(RefArray(reverse(x.refs)), x.invpool)
 
 function Base.permute!!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
     Base.permute!!(x.refs, p)
@@ -176,30 +176,30 @@ Base.findall(pdv::PooledVector{Bool}) = findall(convert(Vector{Bool}, pdv))
 ##############################################################################
 
 function Base.map(f, x::PooledArray{T,R}) where {T,R<:Integer}
-    ks = collect(keys(x.revpool))
-    vs = collect(values(x.revpool))
+    ks = collect(keys(x.invpool))
+    vs = collect(values(x.invpool))
     ks1 = map(f, ks)
     uks = Set(ks1)
     if length(uks) < length(ks1)
         # this means some keys have repeated
-        newrevpool = Dict{eltype(ks1), eltype(vs)}()
+        newinvpool = Dict{eltype(ks1), eltype(vs)}()
         translate = Dict{eltype(vs), eltype(vs)}()
         i = 1
         for (k, k1) in zip(ks, ks1)
-            if haskey(newrevpool, k1)
-                translate[x.revpool[k]] = newrevpool[k1]
+            if haskey(newinvpool, k1)
+                translate[x.invpool[k]] = newinvpool[k1]
             else
-                newrevpool[k1] = i
-                translate[x.revpool[k]] = i
+                newinvpool[k1] = i
+                translate[x.invpool[k]] = i
                 i+=1
             end
         end
         refarray = map(x->translate[x], x.refs)
     else
-        newrevpool = Dict(zip(map(f, ks), vs))
+        newinvpool = Dict(zip(map(f, ks), vs))
         refarray = copy(x.refs)
     end
-    PooledArray(RefArray(refarray), newrevpool)
+    PooledArray(RefArray(refarray), newinvpool)
 end
 
 ##############################################################################
@@ -213,7 +213,7 @@ function groupsort_indexer(x::AbstractVector, ngroups::Integer, perm)
 
     # count group sizes, location 0 for NA
     n = length(x)
-    # counts = x.revpool
+    # counts = x.invpool
     counts = fill(0, ngroups + 1)
     @inbounds for i = 1:n
         counts[x[i] + 1] += 1
@@ -264,9 +264,9 @@ Base.sort(pa::PooledArray; kw...) = pa[sortperm(pa; kw...)]
 ##############################################################################
 
 Base.convert(::Type{PooledArray{S,R1,N}}, pa::PooledArray{T,R2,N}) where {S,T,R1<:Integer,R2<:Integer,N} =
-    PooledArray(RefArray(convert(Array{R1,N}, pa.refs)), convert(Dict{S,R1}, pa.revpool))
+    PooledArray(RefArray(convert(Array{R1,N}, pa.refs)), convert(Dict{S,R1}, pa.invpool))
 Base.convert(::Type{PooledArray{S,R,N}}, pa::PooledArray{T,R,N}) where {S,T,R<:Integer,N} =
-    PooledArray(RefArray(copy(pa.refs)), convert(Dict{S,R}, pa.revpool))
+    PooledArray(RefArray(copy(pa.refs)), convert(Dict{S,R}, pa.invpool))
 Base.convert(::Type{PooledArray{T,R,N}}, pa::PooledArray{T,R,N}) where {T,R<:Integer,N} = pa
 Base.convert(::Type{PooledArray{S,R1}}, pa::PooledArray{T,R2,N}) where {S,T,R1<:Integer,R2<:Integer,N} =
     convert(PooledArray{S,R1,N}, pa)
@@ -318,14 +318,14 @@ end
 
 # Vector case
 Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::Union{Real,AbstractVector}...)
-    PooledArray(RefArray(getindex(A.refs, I...)), copy(A.revpool))
+    PooledArray(RefArray(getindex(A.refs, I...)), copy(A.invpool))
 end
 
 # Dispatch our implementation for these cases instead of Base
 Base.@propagate_inbounds Base.getindex(A::PooledArray, I::AbstractVector) =
-    PooledArray(RefArray(getindex(A.refs, I)), copy(A.revpool))
+    PooledArray(RefArray(getindex(A.refs, I)), copy(A.invpool))
 Base.@propagate_inbounds Base.getindex(A::PooledArray, I::AbstractArray) =
-    PooledArray(RefArray(getindex(A.refs, I)), copy(A.revpool))
+    PooledArray(RefArray(getindex(A.refs, I)), copy(A.invpool))
 
 ##############################################################################
 ##
@@ -335,7 +335,7 @@ Base.@propagate_inbounds Base.getindex(A::PooledArray, I::AbstractArray) =
 
 function getpoolidx(pa::PooledArray{T,R}, val::Any) where {T,R}
     val::T = convert(T,val)
-    pool_idx = get(pa.revpool, val, zero(R))
+    pool_idx = get(pa.invpool, val, zero(R))
     if pool_idx == zero(R)
         pool_idx = unsafe_pool_push!(pa, val)
     end
@@ -352,7 +352,7 @@ function unsafe_pool_push!(pa::PooledArray{T,R}, val) where {T,R}
            )))
     end
     pool_idx = convert(R, _pool_idx)
-    pa.revpool[val] = pool_idx
+    pa.invpool[val] = pool_idx
     push!(pa.pool, val)
     pool_idx
 end
@@ -374,7 +374,7 @@ function Base.push!(pv::PooledVector{S,R}, v::T) where {S,R,T}
     return v
 end
 
-Base.pop!(pv::PooledVector) = pv.revpool[pop!(pv.refs)]
+Base.pop!(pv::PooledVector) = pv.invpool[pop!(pv.refs)]
 
 function Base.pushfirst!(pv::PooledVector{S,R}, v::T) where {S,R,T}
     v = convert(S,v)
@@ -382,7 +382,7 @@ function Base.pushfirst!(pv::PooledVector{S,R}, v::T) where {S,R,T}
     return v
 end
 
-Base.popfirst!(pv::PooledVector) = pv.revpool[popfirst!(pv.refs)]
+Base.popfirst!(pv::PooledVector) = pv.invpool[popfirst!(pv.refs)]
 
 Base.empty!(pv::PooledVector) = (empty!(pv.refs); pv)
 
@@ -403,8 +403,8 @@ function Base.vcat(a::AbstractArray{<:Any, 1}, b::PooledArray{<:Any, <:Integer, 
 end
 
 function Base.vcat(a::PooledArray{T, <:Integer, 1}, b::PooledArray{S, <:Integer, 1}) where {T, S}
-    ap = a.revpool
-    bp = b.revpool
+    ap = a.invpool
+    bp = b.invpool
 
     U = promote_type(T,S)
 
