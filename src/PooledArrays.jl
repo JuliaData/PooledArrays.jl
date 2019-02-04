@@ -114,7 +114,8 @@ function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
         throw(ArgumentError("Cannot construct a PooledArray with type $R with a pool of size $(length(pool))"))
     end
 
-    PooledArray(RefArray(refs), invpool::Dict{T,R})
+    # Assertions are needed since _label is not type stable
+    PooledArray(RefArray(refs::Vector{R}), invpool::Dict{T,R})
 end
 
 function PooledArray{T}(d::AbstractArray) where T
