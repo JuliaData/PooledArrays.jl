@@ -64,7 +64,8 @@ end
 # A no-op constructor
 PooledArray(d::PooledArray) = d
 
-function _label(xs::AbstractArray{T},
+function _label(xs::AbstractArray,
+                ::Type{T}=eltype(xs),
                 ::Type{I}=UInt8,
                 start = 1,
                 labels = Array{I}(undef, size(xs)),
@@ -107,28 +108,27 @@ automatically based on the number of unique elements.
 PooledArray
 
 function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
-    refs, invpool = _label(d)
+    refs, invpool = _label(d, T, R)
 
     if length(invpool) > typemax(R)
         throw(ArgumentError("Cannot construct a PooledArray with type $R with a pool of size $(length(pool))"))
     end
 
-    refs1 = convert(Vector{R}, refs)
-    invpool1 = convert(Dict{T,R}, invpool)
-    PooledArray(RefArray(refs1), invpool1)
+    # Assertions are needed since _label is not type stable
+    PooledArray(RefArray(refs::Vector{R}), invpool::Dict{T,R})
 end
 
 function PooledArray{T}(d::AbstractArray) where T
-    refs, invpool = _label(d)
+    refs, invpool = _label(d, T)
     PooledArray(RefArray(refs), invpool)
 end
 
-PooledArray(d::AbstractArray{T}, r::Type{R}) where {T,R<:Integer} = PooledArray{T}(d, r)
+PooledArray(d::AbstractArray{T}, r::Type) where {T} = PooledArray{T}(d, r)
 PooledArray(d::AbstractArray{T}) where {T} = PooledArray{T}(d)
 
 # Construct an empty PooledVector of a specific type
 PooledArray(t::Type) = PooledArray(Array(t,0))
-PooledArray(t::Type, r::Type{R}) where {R<:Integer} = PooledArray(Array(t,0), r)
+PooledArray(t::Type, r::Type) = PooledArray(Array(t,0), r)
 
 ##############################################################################
 ##
