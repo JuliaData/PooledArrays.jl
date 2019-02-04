@@ -1,6 +1,6 @@
 module PooledArrays
 
-export PooledArray
+export PooledArray, PooledVector, PooledMatrix
 
 ##############################################################################
 ##
