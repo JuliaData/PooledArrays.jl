@@ -108,11 +108,13 @@ automatically based on the number of unique elements.
 PooledArray
 
 function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
-    refs, invpool = _label(d)
+    refs, invpool = _label(d, T, R)
 
     if length(invpool) > typemax(R)
         throw(ArgumentError("Cannot construct a PooledArray with type $R with a pool of size $(length(pool))"))
     end
+
+    PooledArray(RefArray(refs), invpool::Dict{T,R})
 end
 
 function PooledArray{T}(d::AbstractArray) where T
