@@ -119,7 +119,6 @@ function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
     PooledArray(RefArray(refs::Vector{R}), invpool::Dict{T,R}, pool)
 end
 
-using InteractiveUtils
 function PooledArray{T}(d::AbstractArray) where T
     refs, invpool, pool = _label(d, T)
     PooledArray(RefArray(refs), invpool, pool)
