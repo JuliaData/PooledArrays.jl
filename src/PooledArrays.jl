@@ -426,4 +426,14 @@ function Base.vcat(a::PooledArray{T, <:Integer, 1}, b::PooledArray{S, <:Integer,
     return PooledArray(RefArray(newrefs), convert(Dict{U, refT}, newlabels))
 end
 
+function fast_sortable(y::PooledArray)
+    poolranks = invperm(sortperm(y.pool))
+    newpool = Dict(j=>convert(eltype(y.refs), i) for (i,j) in enumerate(poolranks))
+    PooledArray(RefArray(y.refs), newpool)
+end
+
+_perm(o::F, z::V) where {F, V} = Base.Order.Perm{F, V}(o, z)
+
+Base.Order.Perm(o::Base.Order.ForwardOrdering, y::PooledArray) = _perm(o, fast_sortable(y))
+
 end
