@@ -81,7 +81,7 @@ function _label(xs::AbstractArray,
         else
             if nlabels == typemax(I)
                 I2 = _widen(I)
-                return _label(xs, I2, i, convert(Vector{I2}, labels),
+                return _label(xs, T, I2, i, convert(Vector{I2}, labels),
                               convert(Dict{T, I2}, invpool), nlabels)
             end
             nlabels += 1
