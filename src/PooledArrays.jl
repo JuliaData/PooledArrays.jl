@@ -57,8 +57,8 @@ const PooledMatrix{T,R} = PooledArray{T,R,2}
 ##############################################################################
 
 # Echo inner constructor as an outer constructor
-function PooledArray(refs::RefArray{R}, invpool::Dict{T,R}) where {T,R}
-    PooledArray{T,eltype(R),ndims(R),R}(refs, invpool)
+function PooledArray(refs::RefArray{R}, invpool::Dict{T,R}, pool=_invert(invpool)) where {T,R}
+    PooledArray{T,eltype(R),ndims(R),R}(refs, invpool, pool)
 end
 
 PooledArray(d::PooledArray) = copy(d)
@@ -69,6 +69,7 @@ function _label(xs::AbstractArray,
                 start = 1,
                 labels = Array{I}(undef, size(xs)),
                 invpool::Dict{T,I} = Dict{T, I}(),
+                pool::Vector{T} = T[],
                 nlabels = 0,
                ) where {T, I<:Integer}
 
@@ -80,15 +81,16 @@ function _label(xs::AbstractArray,
         else
             if nlabels == typemax(I)
                 I2 = _widen(I)
-                return _label(xs, I2, i, convert(Vector{I2}, labels),
-                              convert(Dict{T, I2}, invpool), nlabels)
+                return _label(xs, T, I2, i, convert(Vector{I2}, labels),
+                              convert(Dict{T, I2}, invpool), pool, nlabels)
             end
             nlabels += 1
             labels[i] = convert(I, nlabels)
             invpool[x] = convert(I, nlabels)
+            push!(pool, x)
         end
     end
-    labels, invpool
+    labels, invpool, pool
 end
 
 _widen(::Type{UInt8}) = UInt16
@@ -107,19 +109,19 @@ automatically based on the number of unique elements.
 PooledArray
 
 function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
-    refs, invpool = _label(d, T, R)
+    refs, invpool, pool = _label(d, T, R)
 
     if length(invpool) > typemax(R)
         throw(ArgumentError("Cannot construct a PooledArray with type $R with a pool of size $(length(pool))"))
     end
 
     # Assertions are needed since _label is not type stable
-    PooledArray(RefArray(refs::Vector{R}), invpool::Dict{T,R})
+    PooledArray(RefArray(refs::Vector{R}), invpool::Dict{T,R}, pool)
 end
 
 function PooledArray{T}(d::AbstractArray) where T
-    refs, invpool = _label(d, T)
-    PooledArray(RefArray(refs), invpool)
+    refs, invpool, pool = _label(d, T)
+    PooledArray(RefArray(refs), invpool, pool)
 end
 
 PooledArray(d::AbstractArray{T}, r::Type) where {T} = PooledArray{T}(d, r)

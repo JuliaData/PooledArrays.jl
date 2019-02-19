@@ -54,6 +54,8 @@ let a = rand(10), b = rand(10,10), c = rand(1:10, 1000)
 
     @test PooledArray{Union{Int,Missing}}([1, 2]) isa PooledArray{Union{Int,Missing}}
 
+    @test eltype(PooledArray(rand(128)).refs) == UInt8
+    @test eltype(PooledArray(rand(300)).refs) == UInt16
     @test PooledVector == PooledArray{T, R, 1} where {T, R}
     @test PooledMatrix == PooledArray{T, R, 2} where {T, R}
 end
