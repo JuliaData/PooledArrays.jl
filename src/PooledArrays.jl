@@ -428,6 +428,8 @@ function Base.vcat(a::PooledArray{T, <:Integer, 1}, b::PooledArray{S, <:Integer,
     return PooledArray(RefArray(newrefs), convert(Dict{U, refT}, newlabels))
 end
 
+fast_sortable(y::PooledArray{<:Integer}) = y
+
 function fast_sortable(y::PooledArray)
     poolranks = invperm(sortperm(y.pool))
     newpool = Dict(j=>convert(eltype(y.refs), i) for (i,j) in enumerate(poolranks))
