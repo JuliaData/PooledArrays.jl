@@ -385,6 +385,8 @@ Base.popfirst!(pv::PooledVector) = pv.invpool[popfirst!(pv.refs)]
 
 Base.empty!(pv::PooledVector) = (empty!(pv.refs); pv)
 
+Base.deleteat!(pv::PooledVector, inds) = (deleteat!(pv.refs, inds); pv)
+
 function _vcat!(c,a,b)
     copyto!(c, 1, a, 1, length(a))
     copyto!(c, length(a)+1, b, 1, length(b))
