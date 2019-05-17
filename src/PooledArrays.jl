@@ -373,6 +373,15 @@ function Base.push!(pv::PooledVector{S,R}, v::T) where {S,R,T}
     return v
 end
 
+function Base.append!(pv::PooledVector, items::AbstractArray)
+    itemindices = eachindex(items)
+    l = length(pv)
+    n = length(itemindices)
+    resize!(pv.refs, l+n)
+    copyto!(pv, l+1, items, first(itemindices), n)
+    return pv
+end
+
 Base.pop!(pv::PooledVector) = pv.invpool[pop!(pv.refs)]
 
 function Base.pushfirst!(pv::PooledVector{S,R}, v::T) where {S,R,T}
