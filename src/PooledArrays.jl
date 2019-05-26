@@ -1,5 +1,7 @@
 module PooledArrays
 
+import DataAPI
+
 export PooledArray, PooledVector, PooledMatrix
 
 ##############################################################################
@@ -136,6 +138,10 @@ PooledArray(t::Type, r::Type) = PooledArray(Array(t,0), r)
 ## Basic interface functions
 ##
 ##############################################################################
+
+DataAPI.refarray(pa::PooledArray) = pa.refs
+DataAPI.refvalue(pa::PooledArray, i) = pa.pool[i]
+DataAPI.refpool(pa::PooledArray) = pa.pool
 
 Base.size(pa::PooledArray) = size(pa.refs)
 Base.length(pa::PooledArray) = length(pa.refs)
