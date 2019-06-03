@@ -26,6 +26,16 @@ let a = rand(10), b = rand(10,10), c = rand(1:10, 1000)
     @test maximum(values(pc.invpool)) == 11
     @test length(pc.pool) == 11
 
+    pc2 = copy(pc)
+    @test append!(pc2, [3, 1]) === pc2
+    @test pc2 == [pc; 3; 1]
+
+    pc2 = copy(pc)
+    @test deleteat!(pc2, 2) === pc2
+    @test pc2 == pc[[1; 3:end]]
+    @test deleteat!(pc2, [2, 4]) === pc2
+    @test pc2 == pc[[1; 4; 6:end]]
+
     #@test issorted(pc.invpool)
 
     @test map(identity, pc) == pc
