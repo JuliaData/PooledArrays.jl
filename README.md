@@ -1,6 +1,6 @@
 | Build | Test Coverage |
 |-------|---------------|
-| [![Build Status](https://travis-ci.org/JuliaComputing/PooledArrays.jl.svg?branch=master)](https://travis-ci.org/JuliaComputing/PooledArrays.jl) | [![codecov](https://codecov.io/gh/JuliaComputing/PooledArrays.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/JuliaComputing/PooledArrays.jl) |
+| [![Build Status](https://travis-ci.org/JuliaData/PooledArrays.jl.svg?branch=master)](https://travis-ci.org/JuliaData/PooledArrays.jl) | [![codecov](https://codecov.io/gh/JuliaData/PooledArrays.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/JuliaData/PooledArrays.jl) |
 
 # PooledArrays.jl
 
