@@ -1,13 +1,16 @@
 # Documentation: http://docs.travis-ci.com/user/languages/julia/
 language: julia
+
 os:
   - linux
   - osx
+
 julia:
   - "0.7"
   - "1.0"
   - "1.1"
   - "nightly"
+
 matrix:
   allow_failures:
     - julia: "nightly"
@@ -15,5 +18,6 @@ matrix:
 
 notifications:
   email: false
+
 after_success:
-  - julia -e 'cd(Pkg.dir("PooledArrays")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder()); Codecov.submit(Codecov.process_folder())'
+  - julia -e 'using Pkg; cd(Pkg.dir("PooledArrays")); Pkg.add("Coverage"); using Coverage; Coveralls.submit(Coveralls.process_folder()); Codecov.submit(Codecov.process_folder())'
