@@ -58,4 +58,20 @@ let a = rand(10), b = rand(10,10), c = rand(1:10, 1000)
     @test eltype(PooledArray(rand(300)).refs) == UInt16
     @test PooledVector == PooledArray{T, R, 1} where {T, R}
     @test PooledMatrix == PooledArray{T, R, 2} where {T, R}
+
+    v1 = PooledArray([1, 3, 2, 4])
+    v2 = PooledArray(BigInt.([1, 3, 2, 4]))
+    v3 = PooledArray(["a", "c", "b", "d"])
+
+    @test PooledArrays.fast_sortable(v1) === v1
+    @test isbitstype(eltype(PooledArrays.fast_sortable(v1)))
+    Base.Order.Perm(Base.Order.Forward, v1).data === v1
+
+    @test PooledArrays.fast_sortable(v2) == PooledArray([1, 3, 2, 4])
+    @test isbitstype(eltype(PooledArrays.fast_sortable(v2)))
+    Base.Order.Perm(Base.Order.Forward, v2).data == PooledArray([1, 3, 2, 4])
+
+    @test PooledArrays.fast_sortable(v3) == PooledArray([1, 3, 2, 4])
+    @test isbitstype(eltype(PooledArrays.fast_sortable(v3)))
+    Base.Order.Perm(Base.Order.Forward, v3).data == PooledArray([1, 3, 2, 4])
 end
