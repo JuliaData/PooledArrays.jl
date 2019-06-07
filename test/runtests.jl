@@ -94,4 +94,20 @@ using DataAPI: refarray, refvalue, refpool
         @test ys === pushfirst!(ys, -100)
         @test ys == [-100, 10, 20, 30]
     end
+
+    v1 = PooledArray([1, 3, 2, 4])
+    v2 = PooledArray(BigInt.([1, 3, 2, 4]))
+    v3 = PooledArray(["a", "c", "b", "d"])
+
+    @test PooledArrays.fast_sortable(v1) === v1
+    @test isbitstype(eltype(PooledArrays.fast_sortable(v1)))
+    Base.Order.Perm(Base.Order.Forward, v1).data === v1
+
+    @test PooledArrays.fast_sortable(v2) == PooledArray([1, 3, 2, 4])
+    @test isbitstype(eltype(PooledArrays.fast_sortable(v2)))
+    Base.Order.Perm(Base.Order.Forward, v2).data == PooledArray([1, 3, 2, 4])
+
+    @test PooledArrays.fast_sortable(v3) == PooledArray([1, 3, 2, 4])
+    @test isbitstype(eltype(PooledArrays.fast_sortable(v3)))
+    Base.Order.Perm(Base.Order.Forward, v3).data == PooledArray([1, 3, 2, 4])
 end
