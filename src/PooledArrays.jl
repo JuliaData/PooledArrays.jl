@@ -140,7 +140,7 @@ PooledArray(t::Type, r::Type) = PooledArray(Array(t,0), r)
 ##############################################################################
 
 DataAPI.refarray(pa::PooledArray) = pa.refs
-DataAPI.refvalue(pa::PooledArray, i) = pa.pool[i]
+DataAPI.refvalue(pa::PooledArray, i::Integer) = pa.pool[i]
 DataAPI.refpool(pa::PooledArray) = pa.pool
 
 Base.size(pa::PooledArray) = size(pa.refs)
