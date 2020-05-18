@@ -87,8 +87,8 @@ function _label(xs::AbstractArray,
                               convert(Dict{T, I2}, invpool), pool, nlabels)
             end
             nlabels += 1
-            labels[i] = convert(I, nlabels)
-            invpool[x] = convert(I, nlabels)
+            labels[i] = nlabels
+            invpool[x] = nlabels
             push!(pool, x)
         end
     end
