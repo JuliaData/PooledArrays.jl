@@ -2,7 +2,11 @@ using Test
 using PooledArrays
 using DataAPI: refarray, refvalue, refpool
 
-let a = rand(10), b = rand(10,10), c = rand(1:10, 1000)
+@testset "PooledArrays" begin
+    a = rand(10)
+    b = rand(10,10)
+    c = rand(1:10, 1000)
+
     @test PooledArray(a) == a
     @test PooledArray(b) == b
     pc = PooledArray(c)
@@ -76,4 +80,16 @@ let a = rand(10), b = rand(10,10), c = rand(1:10, 1000)
         @test refvalue(s, refarray(s)[i]) == s[i]
     end
     @test refpool(s) == ["a", "b"]
+
+    @testset "push!" begin
+        xs = PooledArray([10, 20, 30])
+        @test xs === push!(xs, -100)
+        @test xs == [10, 20, 30, -100]
+    end
+
+    @testset "pushfirst!" begin
+        ys = PooledArray([10, 20, 30])
+        @test ys === pushfirst!(ys, -100)
+        @test ys == [-100, 10, 20, 30]
+    end
 end

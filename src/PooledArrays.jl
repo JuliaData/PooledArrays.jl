@@ -376,9 +376,8 @@ end
 ##############################################################################
 
 function Base.push!(pv::PooledVector{S,R}, v::T) where {S,R,T}
-    v = convert(S,v)
     push!(pv.refs, getpoolidx(pv, v))
-    return v
+    return pv
 end
 
 function Base.append!(pv::PooledVector, items::AbstractArray)
@@ -393,9 +392,8 @@ end
 Base.pop!(pv::PooledVector) = pv.invpool[pop!(pv.refs)]
 
 function Base.pushfirst!(pv::PooledVector{S,R}, v::T) where {S,R,T}
-    v = convert(S,v)
     pushfirst!(pv.refs, getpoolidx(pv, v))
-    return v
+    return pv
 end
 
 Base.popfirst!(pv::PooledVector) = pv.invpool[popfirst!(pv.refs)]
