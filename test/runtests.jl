@@ -69,8 +69,10 @@ using DataAPI: refarray, refvalue, refpool
 
     @test PooledArray{Union{Int,Missing}}([1, 2]) isa PooledArray{Union{Int,Missing}}
 
-    @test eltype(PooledArray(rand(128)).refs) == UInt8
-    @test eltype(PooledArray(rand(300)).refs) == UInt16
+    @test eltype(PooledArray(rand(128)).refs) == UInt32
+    @test eltype(PooledArray(rand(300)).refs) == UInt32
+    @test eltype(PooledArray(rand(128), UInt8).refs) == UInt8
+    @test eltype(PooledArray(rand(300), UInt16).refs) == UInt16
     @test PooledVector == PooledArray{T, R, 1} where {T, R}
     @test PooledMatrix == PooledArray{T, R, 2} where {T, R}
 
