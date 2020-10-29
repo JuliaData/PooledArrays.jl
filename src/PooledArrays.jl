@@ -67,7 +67,7 @@ PooledArray(d::PooledArray) = copy(d)
 
 function _label(xs::AbstractArray,
                 ::Type{T}=eltype(xs),
-                ::Type{I}=UInt8,
+                ::Type{I}=DEFAULT_POOLED_REF_TYPE,
                 start = 1,
                 labels = Array{I}(undef, size(xs)),
                 invpool::Dict{T,I} = Dict{T, I}(),
