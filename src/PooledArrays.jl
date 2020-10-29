@@ -104,9 +104,11 @@ _widen(::Type{UInt32}) = UInt64
 """
     PooledArray(array, [reftype])
 
-Convert the given array to a PooledArray where each element will be referenced
-as an integer of the given type. If no `reftype` is specified one is chosen
-automatically based on the number of unique elements.
+Freshly allocate `PooledArray` using the given array as a source where each
+element will be referenced as an integer of the given type.
+If no `reftype` is specified one is chosen automatically based on the number of unique elements.
+If `array` is not a `PooledArray` then the order of elements in `refpool` in the resulting
+`PooledArray` is the order of first appereance of elements in `array`.
 """
 PooledArray
 
