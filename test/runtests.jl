@@ -4,7 +4,7 @@ using DataAPI: refarray, refvalue, refpool
 
 @testset "PooledArrays" begin
     a = rand(10)
-    b = rand(10,10)
+    b = rand(10, 10)
     c = rand(1:10, 1000)
 
     @test PooledArray(a) == a
@@ -44,11 +44,11 @@ using DataAPI: refarray, refvalue, refpool
     #@test issorted(pc.invpool)
 
     @test map(identity, pc) == pc
-    @test map(x->2x, pc) == map(x->2x, c)
+    @test map(x -> 2x, pc) == map(x -> 2x, c)
 
     # case where the outputs are one-to-many
-    pa = PooledArray([1,2,3,4,5,6])
-    @test map(isodd, pa) == [true,false,true,false,true,false]
+    pa = PooledArray([1, 2, 3, 4, 5, 6])
+    @test map(isodd, pa) == [true, false, true, false, true, false]
 
     px = PooledArray(rand(128))
     py = PooledArray(rand(200))
@@ -65,9 +65,9 @@ using DataAPI: refarray, refvalue, refpool
     @test px2 !== px3
     @test px2 != px3
 
-    @test findall(PooledArray([true,false,true])) == [1,3]
+    @test findall(PooledArray([true, false, true])) == [1, 3]
 
-    @test PooledArray{Union{Int,Missing}}([1, 2]) isa PooledArray{Union{Int,Missing}}
+    @test PooledArray{Union{Int, Missing}}([1, 2]) isa PooledArray{Union{Int, Missing}}
 
     @test eltype(PooledArray(rand(128)).refs) == UInt32
     @test eltype(PooledArray(rand(300)).refs) == UInt32
