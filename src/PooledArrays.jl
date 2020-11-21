@@ -2,7 +2,7 @@ module PooledArrays
 
 import DataAPI
 
-export PooledArray, PooledVector, PooledMatrix
+export PooledArray, PooledVector, PooledMatrix, dropunusedlevels!
 
 ##############################################################################
 ##
@@ -42,6 +42,19 @@ mutable struct PooledArray{T, R <: Integer, N, RA} <: AbstractArray{T, N}
         end
         return new{T, R, N, RA}(rs.a, pool, invpool)
     end
+
+    function PooledArray(
+        rs::RefArray{RA},
+        pool::Vector{T},
+        invpool::Dict{T, R}=Dict{T, R}(x => i for (i, x) in enumerate(pool))
+    ) where {T, R, N, RA <: AbstractArray{R, N}}
+        # refs mustn't overflow pool
+        if length(rs.a) > 0 && maximum(rs.a) > length(invpool)
+            throw(ArgumentError("Reference array points beyond the end of the pool"))
+        end
+        return new{T, R, N, RA}(rs.a, pool, invpool)
+    end
+
 end
 const PooledVector{T, R} = PooledArray{T, R, 1}
 const PooledMatrix{T, R} = PooledArray{T, R, 2}
@@ -198,31 +211,68 @@ Base.findall(pdv::PooledVector{Bool}) = findall(convert(Vector{Bool}, pdv))
 ##
 ##############################################################################
 
-function Base.map(f, x::PooledArray{T, R}) where {T, R <: Integer}
-    ks = collect(keys(x.invpool))
-    vs = collect(values(x.invpool))
-    ks1 = map(f, ks)
-    uks = Set(ks1)
-    if length(uks) < length(ks1)
-        # this means some keys have repeated
-        newinvpool = Dict{eltype(ks1), eltype(vs)}()
-        translate = Dict{eltype(vs), eltype(vs)}()
-        i = 1
-        for (k, k1) in zip(ks, ks1)
-            if haskey(newinvpool, k1)
-                translate[x.invpool[k]] = newinvpool[k1]
+"""
+    dropunusedlevels!(x::PooledArray)
+
+When PooledArrays are modified, via `setindex!`, or deleting elements,
+pooled values that were present originally may no longer appear in the
+array, yet still exist in the "pool". This can be desirable if these
+values may still be reintroduced, but sometimes, it's desirable to
+completely drop any reference to these pooled values. This need
+may come up when calling `map` on a modified PooledArray, which
+only applies the mapping function to the pool as an optimization.
+This can lead to unexpected results if the mapping function
+encounters pooled values that may not be present in the current array.
+"""
+function dropunusedlevels!(x::PooledArray{T, R}) where {T, R}
+    # count number of occurences of each pool value
+    counts = zeros(Int, length(x.pool))
+    for ref in x.refs
+        @inbounds counts[ref] += 1
+    end
+    if any(iszero, counts)
+        # if there are any 0 counts, remove the pool value
+        # and prepare to recode any higher refs
+        newpoolidx = zeros(Int, length(x.pool))
+        numtoremove = 0
+        for (i, count) in enumerate(counts)
+            if count == 0
+                numtoremove += 1
             else
-                newinvpool[k1] = i
-                translate[x.invpool[k]] = i
-                i += 1
+                newpoolidx[i] = i - numtoremove
             end
         end
-        refarray = map(x -> translate[x], x.refs)
-    else
-        newinvpool = Dict(zip(map(f, ks), vs))
-        refarray = copy(x.refs)
+        # recode existing refs with adjusted values
+        for (i, val) in enumerate(x.refs)
+            @inbounds x.refs[i] = R(newpoolidx[val])
+        end
+        # now to adjust pool, remove unused and recode invpool
+        for i = length(counts):-1:1
+            if counts[i] == 0
+                val = x.pool[i]
+                delete!(x.invpool, val)
+                deleteat!(x.pool, i)
+            else
+                x.invpool[x.pool[i]] = R(newpoolidx[i])
+            end
+        end
     end
-    return PooledArray(RefArray(refarray), newinvpool)
+    return
+end
+
+function Base.map(f, x::PooledArray{T, R}; dropunusedlevels::Bool=false) where {T, R <: Integer}
+    if dropunusedlevels
+        dropunusedlevels!(x)
+    end
+    newpool = map(x.pool) do val
+        try
+            f(val)
+        catch e
+            @warn "error applying `f` to $val; you may need to call `dropunusedlevels!(x)` first"
+            rethrow(e)
+        end
+    end
+    return PooledArray(RefArray(copy(x.refs)), newpool)
 end
 
 ##############################################################################
