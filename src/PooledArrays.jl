@@ -98,6 +98,9 @@ end
 _widen(::Type{UInt8}) = UInt16
 _widen(::Type{UInt16}) = UInt32
 _widen(::Type{UInt32}) = UInt64
+_widen(::Type{Int8}) = Int16
+_widen(::Type{Int16}) = Int32
+_widen(::Type{Int32}) = Int64
 
 # Constructor from array, invpool, and ref type
 
@@ -115,12 +118,7 @@ PooledArray
 function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
     refs, invpool, pool = _label(d, T, R)
 
-    if length(invpool) > typemax(R)
-        throw(ArgumentError("Cannot construct a PooledArray with type $R with a pool of size $(length(pool))"))
-    end
-
-    # Assertions are needed since _label is not type stable
-    PooledArray(RefArray(refs::Vector{R}), invpool::Dict{T,R}, pool)
+    PooledArray(RefArray(refs), invpool, pool)
 end
 
 function PooledArray{T}(d::AbstractArray) where T

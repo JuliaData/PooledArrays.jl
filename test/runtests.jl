@@ -94,4 +94,6 @@ using DataAPI: refarray, refvalue, refpool
         @test ys === pushfirst!(ys, -100)
         @test ys == [-100, 10, 20, 30]
     end
+
+    @test eltype(PooledArray(1:300, Int8).refs) == Int16
 end
