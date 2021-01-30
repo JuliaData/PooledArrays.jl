@@ -77,6 +77,11 @@ using DataAPI: refarray, refvalue, refpool
     @test PooledMatrix == PooledArray{T, R, 2} where {T, R}
 
     s = PooledArray(["a", "a", "b"])
+    @test eltype(PooledArray(s).refs) == UInt32
+    @test eltype(PooledArray(s, signed=true).refs) == Int32
+    @test eltype(PooledArray(s, compress=true).refs) == UInt8
+    @test eltype(PooledArray(s, signed=true, compress=true).refs) == Int8
+    @test eltype(PooledArray(rand(300), signed=true, compress=true).refs) == Int16
     @test all(refarray(s) .== [1, 1, 2])
     for i in 1:3
         @test refvalue(s, refarray(s)[i]) == s[i]

@@ -11,6 +11,7 @@ export PooledArray, PooledVector, PooledMatrix
 ##############################################################################
 
 const DEFAULT_POOLED_REF_TYPE = UInt32
+const DEFAULT_SIGNED_REF_TYPE = Int32
 
 # This is used as a wrapper during PooledArray construction only, to distinguish
 # arrays of pool indices from normal arrays
@@ -98,15 +99,23 @@ end
 _widen(::Type{UInt8}) = UInt16
 _widen(::Type{UInt16}) = UInt32
 _widen(::Type{UInt32}) = UInt64
-
+_widen(::Type{Int8}) = Int16
+_widen(::Type{Int16}) = Int32
+_widen(::Type{Int32}) = Int64
 # Constructor from array, invpool, and ref type
 
 """
-    PooledArray(array, [reftype])
+    PooledArray(array, [reftype]; signed=false, compress=false)
 
 Freshly allocate `PooledArray` using the given array as a source where each
 element will be referenced as an integer of the given type.
 If no `reftype` is specified one is chosen automatically based on the number of unique elements.
+The Boolean keyword arguments, `signed` and `compress` determine the choice of `reftype`.
+By default, unsigned integers are used, as they have a greater maxtype than the same size of
+signed integer.  However, the Arrow standard at https://arrow.apache.org/, as implemented in
+the Arrow package, requires signed integer types, which are provided when `signed` is `true`.
+The `compress` argument controls whether the default size of 32 bits is used (`UInt32` for
+unsigned, `Int32` for signed) or if smaller integer types are chosen when they can be used.
 If `array` is not a `PooledArray` then the order of elements in `refpool` in the resulting
 `PooledArray` is the order of first appereance of elements in `array`.
 """
@@ -123,13 +132,16 @@ function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
     PooledArray(RefArray(refs::Vector{R}), invpool::Dict{T,R}, pool)
 end
 
-function PooledArray{T}(d::AbstractArray) where T
-    refs, invpool, pool = _label(d, T)
+function PooledArray{T}(d::AbstractArray; signed::Bool=false, compress::Bool=false) where {T}
+    R = signed ? (compress ? Int8 : DEFAULT_SIGNED_REF_TYPE) : (compress ? UInt8 : DEFAULT_POOLED_REF_TYPE)
+    refs, invpool, pool = _label(d, T, R)
     PooledArray(RefArray(refs), invpool, pool)
 end
 
 PooledArray(d::AbstractArray{T}, r::Type) where {T} = PooledArray{T}(d, r)
-PooledArray(d::AbstractArray{T}) where {T} = PooledArray{T}(d)
+function PooledArray(d::AbstractArray{T}; signed::Bool=false, compress::Bool=false) where {T}
+    PooledArray{T}(d, signed=signed, compress=compress)
+end
 
 # Construct an empty PooledVector of a specific type
 PooledArray(t::Type) = PooledArray(Array(t,0))
