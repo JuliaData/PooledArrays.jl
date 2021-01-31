@@ -118,6 +118,9 @@ The `compress` argument controls whether the default size of 32 bits is used (`U
 unsigned, `Int32` for signed) or if smaller integer types are chosen when they can be used.
 If `array` is not a `PooledArray` then the order of elements in `refpool` in the resulting
 `PooledArray` is the order of first appereance of elements in `array`.
+
+Note that if you hold mutable objects in `PooledArray` it is not allowed to modify them
+after they are stored in it.
 """
 PooledArray
 
