@@ -159,6 +159,7 @@ PooledArray(t::Type, r::Type) = PooledArray(Array(t,0), r)
 DataAPI.refarray(pa::PooledArray) = pa.refs
 DataAPI.refvalue(pa::PooledArray, i::Integer) = pa.pool[i]
 DataAPI.refpool(pa::PooledArray) = pa.pool
+DataAPI.invrefpool(pa::PooledArray) = pa.invpool
 
 Base.size(pa::PooledArray) = size(pa.refs)
 Base.length(pa::PooledArray) = length(pa.refs)
