@@ -1,6 +1,6 @@
 using Test
 using PooledArrays
-using DataAPI: refarray, refvalue, refpool
+using DataAPI: refarray, refvalue, refpool, invrefpool
 
 @testset "PooledArrays" begin
     a = rand(10)
@@ -87,7 +87,8 @@ using DataAPI: refarray, refvalue, refpool
         @test refvalue(s, refarray(s)[i]) == s[i]
     end
     @test refpool(s) == ["a", "b"]
-
+    @test invrefpool(s) == Dict("a" => 1, "b" => 2)
+    
     @testset "push!" begin
         xs = PooledArray([10, 20, 30])
         @test xs === push!(xs, -100)
