@@ -24,22 +24,28 @@ function _invert(d::Dict{K,V}) where {K,V}
     for (k, v) in d
         d1[v] = k
     end
-    d1
+    return d1
 end
 
 mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
     refs::RA
     pool::Vector{T}
     invpool::Dict{T,R}
+    cow::Bool
+    lock::Ref{Threads.ReentrantLock}
 
-    function PooledArray(rs::RefArray{RA},
-                         invpool::Dict{T, R},
-                         pool=_invert(invpool)) where {T,R,N,RA<:AbstractArray{R, N}}
+    function PooledArray(rs::RefArray{RA}, invpool::Dict{T, R}, pool::Vector{T}, cow::Bool,
+                         lock::Ref{Threads.ReentrantLock}) where {T,R,N,RA<:AbstractArray{R, N}}
+        # this is a quick but incomplete consistency check
+        if length(pool) != length(invpool)
+            throw(ArgumentError("inconsistent pool and invpool"))
+        end
         # refs mustn't overflow pool
-        if length(rs.a) > 0 && maximum(rs.a) > length(invpool)
+        minref, maxref = extrema(rs.a)
+        if length(rs.a) > 0 && (minref < 1 || maxref > length(invpool))
             throw(ArgumentError("Reference array points beyond the end of the pool"))
         end
-        new{T,R,N,RA}(rs.a,pool,invpool)
+        new{T,R,N,RA}(rs.a,pool,invpool, cow, lock)
     end
 end
 const PooledVector{T,R} = PooledArray{T,R,1}
@@ -60,11 +66,16 @@ const PooledMatrix{T,R} = PooledArray{T,R,2}
 ##############################################################################
 
 # Echo inner constructor as an outer constructor
-function PooledArray(refs::RefArray{R}, invpool::Dict{T,R}, pool=_invert(invpool)) where {T,R}
-    PooledArray{T,eltype(R),ndims(R),R}(refs, invpool, pool)
-end
+PooledArray(refs::RefArray{R}, invpool::Dict{T,R}, pool::Vector{T}, cow::Bool,
+            lock::Ref{Threads.ReentrantLock}) where {T,R} =
+    PooledArray{T,eltype(R),ndims(R),R}(refs, invpool, pool, cow, lock)
 
-PooledArray(d::PooledArray) = copy(d)
+function PooledArray(d::PooledArray{T,R}) where {T,R}
+    Threads.lock(d.lock)
+    d.cow = true
+    Threads.unlock(d.lock)
+    return PooledArray(RefArray(RefArray(copy(d.refs.a)), d.invpool, d.pool, true)
+end
 
 function _label(xs::AbstractArray,
                 ::Type{T}=eltype(xs),
@@ -132,19 +143,19 @@ function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
     end
 
     # Assertions are needed since _label is not type stable
-    PooledArray(RefArray(refs::Vector{R}), invpool::Dict{T,R}, pool)
+    return PooledArray(RefArray(refs::Vector{R}), invpool::Dict{T,R}, pool, false,
+                       Ref{Threads.ReentrantLock()})
 end
 
 function PooledArray{T}(d::AbstractArray; signed::Bool=false, compress::Bool=false) where {T}
     R = signed ? (compress ? Int8 : DEFAULT_SIGNED_REF_TYPE) : (compress ? UInt8 : DEFAULT_POOLED_REF_TYPE)
     refs, invpool, pool = _label(d, T, R)
-    PooledArray(RefArray(refs), invpool, pool)
+    return PooledArray(RefArray(refs), invpool, pool, false, Ref{Threads.ReentrantLock()})
 end
 
 PooledArray(d::AbstractArray{T}, r::Type) where {T} = PooledArray{T}(d, r)
-function PooledArray(d::AbstractArray{T}; signed::Bool=false, compress::Bool=false) where {T}
+PooledArray(d::AbstractArray{T}; signed::Bool=false, compress::Bool=false) where {T} =
     PooledArray{T}(d, signed=signed, compress=compress)
-end
 
 # Construct an empty PooledVector of a specific type
 PooledArray(t::Type) = PooledArray(Array(t,0))
@@ -165,31 +176,37 @@ Base.size(pa::PooledArray) = size(pa.refs)
 Base.length(pa::PooledArray) = length(pa.refs)
 Base.lastindex(pa::PooledArray) = lastindex(pa.refs)
 
-Base.copy(pa::PooledArray) = PooledArray(RefArray(copy(pa.refs)), copy(pa.invpool))
-# TODO: Implement copy_to()
+Base.copy(pa::PooledArray) =
+    return PooledArray(RefArray(copy(pa.refs)), pa.invpool, pa.pool, true, pa.lock)
+
+# TODO: Implement copy! and copyto! taking into account when pool sharing should happen
 
 function Base.resize!(pa::PooledArray{T,R,1}, n::Integer) where {T,R}
     oldn = length(pa.refs)
     resize!(pa.refs, n)
     pa.refs[oldn+1:n] .= zero(R)
-    pa
+    return pa
 end
 
-Base.reverse(x::PooledArray) = PooledArray(RefArray(reverse(x.refs)), x.invpool)
+function Base.reverse(x::PooledArray)
+    Threads.lock(x.lock)
+    x.cow = true
+    Threads.unlock(x.lock)
+    PooledArray(RefArray(reverse(x.refs)), x.invpool, x.pool, true, x.lock)
+end
 
 function Base.permute!!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
     Base.permute!!(x.refs, p)
-    x
+    return x
 end
 
 function Base.invpermute!!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
     Base.invpermute!!(x.refs, p)
-    x
+    return x
 end
 
-function Base.similar(pa::PooledArray{T,R}, S::Type, dims::Dims) where {T,R}
+Base.similar(pa::PooledArray{T,R}, S::Type, dims::Dims) where {T,R} =
     PooledArray(RefArray(zeros(R, dims)), Dict{S,R}())
-end
 
 Base.findall(pdv::PooledVector{Bool}) = findall(convert(Vector{Bool}, pdv))
 
@@ -224,7 +241,8 @@ function Base.map(f, x::PooledArray{T,R}) where {T,R<:Integer}
         newinvpool = Dict(zip(map(f, ks), vs))
         refarray = copy(x.refs)
     end
-    PooledArray(RefArray(refarray), newinvpool)
+    return PooledArray(RefArray(refarray), newinvpool, _invert(newinvpool), false,
+                       Ref(Threads.ReentrantLock()))
 end
 
 ##############################################################################
@@ -287,6 +305,8 @@ Base.sort(pa::PooledArray; kw...) = pa[sortperm(pa; kw...)]
 ## conversions
 ##
 ##############################################################################
+
+# TODO: fix conversions to correctly handle cow and lock
 
 Base.convert(::Type{PooledArray{S,R1,N}}, pa::PooledArray{T,R2,N}) where {S,T,R1<:Integer,R2<:Integer,N} =
     PooledArray(RefArray(convert(Array{R1,N}, pa.refs)), convert(Dict{S,R1}, pa.invpool))
@@ -368,7 +388,7 @@ function getpoolidx(pa::PooledArray{T,R}, val::Any) where {T,R}
 end
 
 function unsafe_pool_push!(pa::PooledArray{T,R}, val) where {T,R}
-    _pool_idx = length(pa.pool)+1
+    _pool_idx = length(pa.pool) + 1
     if _pool_idx > typemax(R)
         throw(ErrorException(string(
             "You're using a PooledArray with ref type $R, which can only hold $(Int(typemax(R))) values,\n",
@@ -377,6 +397,15 @@ function unsafe_pool_push!(pa::PooledArray{T,R}, val) where {T,R}
            )))
     end
     pool_idx = convert(R, _pool_idx)
+    if pa.cow
+        l = pa.lock
+        Threads.lock(l)
+        pa.invpool = copy(pa.invpool)
+        pa.pool = copy(pa.pool)
+        pa.cow = false
+        pa.lock = Threads.ReentrantLock()
+        Threads.unlock(l)
+    end
     pa.invpool[val] = pool_idx
     push!(pa.pool, val)
     pool_idx
@@ -420,20 +449,21 @@ Base.empty!(pv::PooledVector) = (empty!(pv.refs); pv)
 
 Base.deleteat!(pv::PooledVector, inds) = (deleteat!(pv.refs, inds); pv)
 
-function _vcat!(c,a,b)
+function _vcat!(c, a, b)
     copyto!(c, 1, a, 1, length(a))
-    copyto!(c, length(a)+1, b, 1, length(b))
+    return copyto!(c, length(a)+1, b, 1, length(b))
 end
 
+# TODO: rethink pool sharing in vcat
 
 function Base.vcat(a::PooledArray{<:Any, <:Integer, 1}, b::AbstractArray{<:Any, 1})
     output = similar(b, promote_type(eltype(a), eltype(b)), length(b) + length(a))
-    _vcat!(output, a, b)
+    return _vcat!(output, a, b)
 end
 
 function Base.vcat(a::AbstractArray{<:Any, 1}, b::PooledArray{<:Any, <:Integer, 1})
     output = similar(a, promote_type(eltype(a), eltype(b)), length(b) + length(a))
-    _vcat!(output, a, b)
+    return _vcat!(output, a, b)
 end
 
 function Base.vcat(a::PooledArray{T, <:Integer, 1}, b::PooledArray{S, <:Integer, 1}) where {T, S}
