@@ -4,9 +4,7 @@ import DataAPI
 
 export PooledArray, PooledVector, PooledMatrix
 
-# TODO:
-# 1. review whole code because we changed constructor
-# 2. implement compress! function that in place replaces refarray, invpool and pool dropping unused levels
+# TODO: implement compresspool! and compresspool functions that compresses pool of PooledArray
 
 ##############################################################################
 ##
@@ -35,11 +33,11 @@ mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
     refs::RA
     pool::Vector{T}
     invpool::Dict{T,R}
-    cow::Bool
-    lock::Ref{Threads.ReentrantLock}
+    refcount::Threads.Atomic{Int}
 
-    function PooledArray(rs::RefArray{RA}, invpool::Dict{T, R}, pool::Vector{T}, cow::Bool,
-                         lock::Ref{Threads.ReentrantLock}) where {T,R,N,RA<:AbstractArray{R, N}}
+    function PooledArray(rs::RefArray{RA}, invpool::Dict{T, R},
+                         pool::Vector{T}=_invert(invpool),
+                         refcount::Threads.Atomic{Int}=Threads.Atomic()) where {T,R,N,RA<:AbstractArray{R, N}}
         # this is a quick but incomplete consistency check
         if length(pool) != length(invpool)
             throw(ArgumentError("inconsistent pool and invpool"))
@@ -49,7 +47,9 @@ mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
         if length(rs.a) > 0 && (minref < 1 || maxref > length(invpool))
             throw(ArgumentError("Reference array points beyond the end of the pool"))
         end
-        new{T,R,N,RA}(rs.a,pool,invpool, cow, lock)
+        pa = new{T,R,N,RA}(rs.a, pool, invpool, refcount)
+        finalizer(x -> Threads.atomic_sub!(x.refcount, 1), pa)
+        return pa
     end
 end
 const PooledVector{T,R} = PooledArray{T,R,1}
@@ -70,15 +70,13 @@ const PooledMatrix{T,R} = PooledArray{T,R,2}
 ##############################################################################
 
 # Echo inner constructor as an outer constructor
-PooledArray(refs::RefArray{R}, invpool::Dict{T,R}, pool::Vector{T}, cow::Bool,
-            lock::Ref{Threads.ReentrantLock}) where {T,R} =
-    PooledArray{T,eltype(R),ndims(R),R}(refs, invpool, pool, cow, lock)
+PooledArray(refs::RefArray{R}, invpool::Dict{T,R}, pool::Vector{T}=_invert(invpool),
+            refcount::Threads.Atomic{Int}=Threads.Atomic()) where {T,R} =
+    PooledArray{T,eltype(R),ndims(R),R}(refs, invpool, pool, refcount)
 
 function PooledArray(d::PooledArray{T,R}) where {T,R}
-    Threads.lock(d.lock)
-    d.cow = true
-    Threads.unlock(d.lock)
-    return PooledArray(RefArray(RefArray(copy(d.refs.a)), d.invpool, d.pool, true)
+    Threads.atomic_add!(d.refcount, 1)
+    return PooledArray(RefArray(RefArray(copy(d.refs.a)), d.invpool, d.pool, d.refcount)
 end
 
 function _label(xs::AbstractArray,
@@ -136,6 +134,13 @@ If `array` is not a `PooledArray` then the order of elements in `refpool` in the
 
 Note that if you hold mutable objects in `PooledArray` it is not allowed to modify them
 after they are stored in it.
+
+In order to improve performance of `getindex` and `copyto!` operations `PooledArray`s
+may share `pool` and `invpool` fields. This sharing is automatically handled
+and is removed for any array sharing common pool if new levels are added to it.
+
+It is not thread safe to use add new levels to `PooledArray` (both for the single
+`PooledArray` and in case of several `PooledArrays` sharing a common pool described above).
 """
 PooledArray
 
@@ -181,11 +186,34 @@ Base.length(pa::PooledArray) = length(pa.refs)
 Base.lastindex(pa::PooledArray) = lastindex(pa.refs)
 
 Base.copy(pa::PooledArray) =
-    return PooledArray(RefArray(copy(pa.refs)), pa.invpool, pa.pool, true, pa.lock)
+    return PooledArray(RefArray(copy(pa.refs)), pa.invpool, pa.pool, true, pa.refcount)
 
-# TODO: Implement copy! and copyto! taking into account when pool sharing should happen
-# the idea is that if the target is PooledArray and it has an empty pool
-# instead of creating the pool from scratch we can do pool sharing
+function copyto!(dest::PooledArray{T, R, N, RA}, doffs::Union{Signed, Unsigned,
+                 src::PooledArray{T, R, N, RA}, soffs::Union{Signed, Unsigned,
+                 n::Union{Signed, Unsigned) where {T, R, N, RA}
+    n == 0 && return dest
+    n > 0 || Base._throw_argerror()
+    if soffs < 1 || doffs < 1 || soffs+n-1 > length(src) || doffs+n-1 > length(dest)
+        throw(BoundsError())
+    end
+
+    if length(dest.pool) == 0
+        @assert length(dest.invpool) == 0
+        Threads.atomic_add!(src.refcount, 1)
+        dest.pool = src.pool
+        dest.invpool = src.invpool
+        Threads.atomic_sub!(dest.refcount, 1)
+        copyto!(dest.refs, doffs, src.refs, soffs, n)
+    elseif dest.pool === src.pool && dest.invpool === src.invpool
+        copyto!(dest.refs, doffs, src.refs, soffs, n)
+    else
+        @inbounds for i in 0:n-1
+            dest[dstart+i] = src[sstart+i]
+        end
+    end
+    return dest
+end
+
 
 function Base.resize!(pa::PooledArray{T,R,1}, n::Integer) where {T,R}
     oldn = length(pa.refs)
@@ -195,10 +223,8 @@ function Base.resize!(pa::PooledArray{T,R,1}, n::Integer) where {T,R}
 end
 
 function Base.reverse(x::PooledArray)
-    Threads.lock(x.lock)
-    x.cow = true
-    Threads.unlock(x.lock)
-    PooledArray(RefArray(reverse(x.refs)), x.invpool, x.pool, true, x.lock)
+    Threads.atomic_add!(x.refcount, 1)
+    PooledArray(RefArray(reverse(x.refs)), x.invpool, x.pool, x.refcount)
 end
 
 function Base.permute!!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
@@ -312,12 +338,28 @@ Base.sort(pa::PooledArray; kw...) = pa[sortperm(pa; kw...)]
 ##
 ##############################################################################
 
-# TODO: fix conversions to correctly handle cow and lock
+function Base.convert(::Type{PooledArray{S,R1,N}}, pa::PooledArray{T,R2,N}) where {S,T,R1<:Integer,R2<:Integer,N}
+    if S === R && R1 === R2
+        return pa
+    else
+        refs_conv = convert(Array{R1,N}, pa.refs)
+        @assert refs_conv !== pa.refs
+        invpool_conv = convert(Dict{S,R}, pa.invpool)
+        @assert invpool_conv !== pa.invpool
+        return PooledArray(RefArray(refs_conv), invpool_conv)
+    end
+end
 
-Base.convert(::Type{PooledArray{S,R1,N}}, pa::PooledArray{T,R2,N}) where {S,T,R1<:Integer,R2<:Integer,N} =
-    PooledArray(RefArray(convert(Array{R1,N}, pa.refs)), convert(Dict{S,R1}, pa.invpool))
-Base.convert(::Type{PooledArray{S,R,N}}, pa::PooledArray{T,R,N}) where {S,T,R<:Integer,N} =
-    PooledArray(RefArray(copy(pa.refs)), convert(Dict{S,R}, pa.invpool))
+function Base.convert(::Type{PooledArray{S,R,N}}, pa::PooledArray{T,R,N}) where {S,T,R<:Integer,N}
+    if S === R
+        return pa
+    else
+        invpool_conv = convert(Dict{S,R}, pa.invpool)
+        @assert invpool_conv !== pa.invpool
+        return PooledArray(RefArray(copy(pa.refs)), invpool_conv)
+    end
+end
+
 Base.convert(::Type{PooledArray{T,R,N}}, pa::PooledArray{T,R,N}) where {T,R<:Integer,N} = pa
 Base.convert(::Type{PooledArray{S,R1}}, pa::PooledArray{T,R2,N}) where {S,T,R1<:Integer,R2<:Integer,N} =
     convert(PooledArray{S,R1,N}, pa)
@@ -369,25 +411,20 @@ end
 
 # Vector case
 function Base.@propagate_inbounds Base.getindex(A::PooledArray, I::Union{Real,AbstractVector}...)
-    Threads.lock(A.lock)
-    A.cow = true
-    Threads.lock(A.unlock)
-    return PooledArray(RefArray(getindex(A.refs, I...)), A.invpool, A.pool, true, A.lock)
+    Threads.atomic_add!(A.refcount, 1)
+    return PooledArray(RefArray(getindex(A.refs, I...)), A.invpool, A.pool, A.refcount)
 end
 
 # Dispatch our implementation for these cases instead of Base
 function Base.@propagate_inbounds Base.getindex(A::PooledArray, I::AbstractVector)
-    Threads.lock(A.lock)
-    A.cow = true
-    Threads.lock(A.unlock)
-    return PooledArray(RefArray(getindex(A.refs, I)), A.invpool, A.pool, true, A.lock)
+    Threads.atomic_add!(A.refcount, 1)
+    return PooledArray(RefArray(getindex(A.refs, I)), A.invpool, A.pool, A.refcount)
 end
 
 function Base.@propagate_inbounds Base.getindex(A::PooledArray, I::AbstractArray)
-    Threads.lock(A.lock)
-    A.cow = true
-    Threads.lock(A.unlock)
-    return PooledArray(RefArray(getindex(A.refs, I)), A.invpool, A.pool, true, A.lock)
+        Threads.atomic_add!(A.refcount, 1)
+
+    return PooledArray(RefArray(getindex(A.refs, I)), A.invpool, A.pool, A.refcount)
 end
 
 ##############################################################################
@@ -406,6 +443,7 @@ function getpoolidx(pa::PooledArray{T,R}, val::Any) where {T,R}
 end
 
 function unsafe_pool_push!(pa::PooledArray{T,R}, val) where {T,R}
+    # Warning - unsafe_pool_push! may not be used in any multithreaded context
     _pool_idx = length(pa.pool) + 1
     if _pool_idx > typemax(R)
         throw(ErrorException(string(
@@ -415,14 +453,11 @@ function unsafe_pool_push!(pa::PooledArray{T,R}, val) where {T,R}
            )))
     end
     pool_idx = convert(R, _pool_idx)
-    if pa.cow
-        l = pa.lock
-        Threads.lock(l)
+    if pa.refcount[] > 0
         pa.invpool = copy(pa.invpool)
         pa.pool = copy(pa.pool)
-        pa.cow = false
-        pa.lock = Threads.ReentrantLock()
-        Threads.unlock(l)
+        Threads.atomic_sub!(pa.refcount, 1)
+        pa.refcount = Threads.Atomic()
     end
     pa.invpool[val] = pool_idx
     push!(pa.pool, val)
@@ -481,9 +516,6 @@ function Base.vcat(a::AbstractArray{<:Any, 1}, b::PooledArray{<:Any, <:Integer, 
     output = similar(a, promote_type(eltype(a), eltype(b)), length(b) + length(a))
     return _vcat!(output, a, b)
 end
-
-# TODO: rethink if this cannot be made more efficient in some cases when we can just copy
-# invpool and pool of the longer array instead of re-creating them
 
 function Base.vcat(a::PooledArray{T, <:Integer, 1}, b::PooledArray{S, <:Integer, 1}) where {T, S}
     ap = a.invpool
