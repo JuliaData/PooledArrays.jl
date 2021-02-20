@@ -4,6 +4,10 @@ import DataAPI
 
 export PooledArray, PooledVector, PooledMatrix
 
+# TODO:
+# 1. review whole code because we changed constructor
+# 2. implement compress! function that in place replaces refarray, invpool and pool dropping unused levels
+
 ##############################################################################
 ##
 ## PooledArray type definition
@@ -180,6 +184,8 @@ Base.copy(pa::PooledArray) =
     return PooledArray(RefArray(copy(pa.refs)), pa.invpool, pa.pool, true, pa.lock)
 
 # TODO: Implement copy! and copyto! taking into account when pool sharing should happen
+# the idea is that if the target is PooledArray and it has an empty pool
+# instead of creating the pool from scratch we can do pool sharing
 
 function Base.resize!(pa::PooledArray{T,R,1}, n::Integer) where {T,R}
     oldn = length(pa.refs)
@@ -362,15 +368,27 @@ Base.@propagate_inbounds function Base.isassigned(pa::PooledArray, I::Int...)
 end
 
 # Vector case
-Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::Union{Real,AbstractVector}...)
-    PooledArray(RefArray(getindex(A.refs, I...)), copy(A.invpool))
+function Base.@propagate_inbounds Base.getindex(A::PooledArray, I::Union{Real,AbstractVector}...)
+    Threads.lock(A.lock)
+    A.cow = true
+    Threads.lock(A.unlock)
+    return PooledArray(RefArray(getindex(A.refs, I...)), A.invpool, A.pool, true, A.lock)
 end
 
 # Dispatch our implementation for these cases instead of Base
-Base.@propagate_inbounds Base.getindex(A::PooledArray, I::AbstractVector) =
-    PooledArray(RefArray(getindex(A.refs, I)), copy(A.invpool))
-Base.@propagate_inbounds Base.getindex(A::PooledArray, I::AbstractArray) =
-    PooledArray(RefArray(getindex(A.refs, I)), copy(A.invpool))
+function Base.@propagate_inbounds Base.getindex(A::PooledArray, I::AbstractVector)
+    Threads.lock(A.lock)
+    A.cow = true
+    Threads.lock(A.unlock)
+    return PooledArray(RefArray(getindex(A.refs, I)), A.invpool, A.pool, true, A.lock)
+end
+
+function Base.@propagate_inbounds Base.getindex(A::PooledArray, I::AbstractArray)
+    Threads.lock(A.lock)
+    A.cow = true
+    Threads.lock(A.unlock)
+    return PooledArray(RefArray(getindex(A.refs, I)), A.invpool, A.pool, true, A.lock)
+end
 
 ##############################################################################
 ##
@@ -454,8 +472,6 @@ function _vcat!(c, a, b)
     return copyto!(c, length(a)+1, b, 1, length(b))
 end
 
-# TODO: rethink pool sharing in vcat
-
 function Base.vcat(a::PooledArray{<:Any, <:Integer, 1}, b::AbstractArray{<:Any, 1})
     output = similar(b, promote_type(eltype(a), eltype(b)), length(b) + length(a))
     return _vcat!(output, a, b)
@@ -465,6 +481,9 @@ function Base.vcat(a::AbstractArray{<:Any, 1}, b::PooledArray{<:Any, <:Integer, 
     output = similar(a, promote_type(eltype(a), eltype(b)), length(b) + length(a))
     return _vcat!(output, a, b)
 end
+
+# TODO: rethink if this cannot be made more efficient in some cases when we can just copy
+# invpool and pool of the longer array instead of re-creating them
 
 function Base.vcat(a::PooledArray{T, <:Integer, 1}, b::PooledArray{S, <:Integer, 1}) where {T, S}
     ap = a.invpool
