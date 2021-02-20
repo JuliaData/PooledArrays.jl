@@ -74,7 +74,7 @@ PooledArray(refs::RefArray{R}, invpool::Dict{T,R}, pool::Vector{T}=_invert(invpo
             refcount::Threads.Atomic{Int}=Threads.Atomic()) where {T,R} =
     PooledArray{T,eltype(R),ndims(R),R}(refs, invpool, pool, refcount)
 
-function PooledArray(d::PooledArray{T,R}) where {T,R}
+function PooledArray(d::PooledArray)
     Threads.atomic_add!(d.refcount, 1)
     return PooledArray(RefArray(RefArray(copy(d.refs.a)), d.invpool, d.pool, d.refcount)
 end
@@ -185,8 +185,7 @@ Base.size(pa::PooledArray) = size(pa.refs)
 Base.length(pa::PooledArray) = length(pa.refs)
 Base.lastindex(pa::PooledArray) = lastindex(pa.refs)
 
-Base.copy(pa::PooledArray) =
-    return PooledArray(RefArray(copy(pa.refs)), pa.invpool, pa.pool, true, pa.refcount)
+Base.copy(pa::PooledArray) = PooledArray(pa)
 
 function copyto!(dest::PooledArray{T, R, N, RA}, doffs::Union{Signed, Unsigned,
                  src::PooledArray{T, R, N, RA}, soffs::Union{Signed, Unsigned,
