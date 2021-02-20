@@ -187,6 +187,10 @@ Base.lastindex(pa::PooledArray) = lastindex(pa.refs)
 
 Base.copy(pa::PooledArray) = PooledArray(pa)
 
+Base.copyto!(dest::PooledArray{T, R, N, RA},
+             src::PooledArray{T, R, N, RA}) where {T, R, N, RA} =
+    copyto!(dest, 1, src, 1, lenth(src))
+
 function Base.copyto!(dest::PooledArray{T, R, N, RA}, doffs::Union{Signed, Unsigned},
                  src::PooledArray{T, R, N, RA}, soffs::Union{Signed, Unsigned},
                  n::Union{Signed, Unsigned}) where {T, R, N, RA}
