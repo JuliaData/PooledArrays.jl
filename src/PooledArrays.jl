@@ -35,7 +35,7 @@ mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
     invpool::Dict{T,R}
     refcount::Threads.Atomic{Int}
 
-    function PooledArray(rs::RefArray{RA}, invpool::Dict{T, R},
+    function PooledArray{T,R,N,RA}(rs::RefArray{RA}, invpool::Dict{T, R},
                          pool::Vector{T}=_invert(invpool),
                          refcount::Threads.Atomic{Int}=Threads.Atomic()) where {T,R,N,RA<:AbstractArray{R, N}}
         # this is a quick but incomplete consistency check
@@ -71,9 +71,9 @@ const PooledMatrix{T,R} = PooledArray{T,R,2}
 ##############################################################################
 
 # Echo inner constructor as an outer constructor
-PooledArray(refs::RefArray{R}, invpool::Dict{T,R}, pool::Vector{T}=_invert(invpool),
-            refcount::Threads.Atomic{Int}=Threads.Atomic()) where {T,R} =
-    PooledArray{T,eltype(R),ndims(R),R}(refs, invpool, pool, refcount)
+PooledArray(refs::RefArray{RA}, invpool::Dict{T,R}, pool::Vector{T}=_invert(invpool),
+            refcount::Threads.Atomic{Int}=Threads.Atomic()) where {T,R,RA<:AbstractArray{R}} =
+    PooledArray{T,R,ndims(RA),RA}(refs, invpool, pool, refcount)
 
 function PooledArray(d::PooledArray)
     Threads.atomic_add!(d.refcount, 1)
@@ -421,22 +421,19 @@ Base.@propagate_inbounds function Base.isassigned(pa::PooledArray, I::Int...)
     !iszero(pa.refs[I...])
 end
 
-# Vector case
-Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::Union{Real,AbstractVector}...)
-    Threads.atomic_add!(A.refcount, 1)
-    return PooledArray(RefArray(getindex(A.refs, I...)), A.invpool, A.pool, A.refcount)
-end
+# Other cases case
+Base.@propagate_inbounds function Base.getindex(A::PooledArray, I...)
+    new_refs = getindex(A.refs, I...)
 
-# Dispatch our implementation for these cases instead of Base
-Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::AbstractVector)
-    Threads.atomic_add!(A.refcount, 1)
-    return PooledArray(RefArray(getindex(A.refs, I)), A.invpool, A.pool, A.refcount)
-end
-
-Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::AbstractArray)
+    if new_refs isa AbstractArray
         Threads.atomic_add!(A.refcount, 1)
-
-    return PooledArray(RefArray(getindex(A.refs, I)), A.invpool, A.pool, A.refcount)
+        return PooledArray(RefArray(getindex(A.refs, I...)), A.invpool, A.pool, A.refcount)
+    else
+        @assert typeof(new_refs) === eltype(A.refs)
+        # scalar produced
+        iszero(new_refs) && throw(UndefRefError())
+        return @inbounds A.pool[new_refs]
+    end
 end
 
 ##############################################################################
