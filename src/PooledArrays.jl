@@ -44,7 +44,8 @@ mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
         end
         # refs mustn't overflow pool
         minref, maxref = extrema(rs.a)
-        if length(rs.a) > 0 && (minref < 1 || maxref > length(invpool))
+        # 0 indicates #undef
+        if length(rs.a) > 0 && (minref < 0 || maxref > length(invpool))
             throw(ArgumentError("Reference array points beyond the end of the pool"))
         end
         pa = new{T,R,N,RA}(rs.a, pool, invpool, refcount)
@@ -76,7 +77,7 @@ PooledArray(refs::RefArray{R}, invpool::Dict{T,R}, pool::Vector{T}=_invert(invpo
 
 function PooledArray(d::PooledArray)
     Threads.atomic_add!(d.refcount, 1)
-    return PooledArray(RefArray(copy(d.refs.a)), d.invpool, d.pool, d.refcount)
+    return PooledArray(RefArray(copy(d.refs)), d.invpool, d.pool, d.refcount)
 end
 
 function _label(xs::AbstractArray,
@@ -186,9 +187,9 @@ Base.lastindex(pa::PooledArray) = lastindex(pa.refs)
 
 Base.copy(pa::PooledArray) = PooledArray(pa)
 
-function copyto!(dest::PooledArray{T, R, N, RA}, doffs::Union{Signed, Unsigned,
-                 src::PooledArray{T, R, N, RA}, soffs::Union{Signed, Unsigned,
-                 n::Union{Signed, Unsigned) where {T, R, N, RA}
+function Base.copyto!(dest::PooledArray{T, R, N, RA}, doffs::Union{Signed, Unsigned},
+                 src::PooledArray{T, R, N, RA}, soffs::Union{Signed, Unsigned},
+                 n::Union{Signed, Unsigned}) where {T, R, N, RA}
     n == 0 && return dest
     n > 0 || Base._throw_argerror()
     if soffs < 1 || doffs < 1 || soffs+n-1 > length(src) || doffs+n-1 > length(dest)
@@ -407,18 +408,18 @@ Base.@propagate_inbounds function Base.isassigned(pa::PooledArray, I::Int...)
 end
 
 # Vector case
-function Base.@propagate_inbounds Base.getindex(A::PooledArray, I::Union{Real,AbstractVector}...)
+Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::Union{Real,AbstractVector}...)
     Threads.atomic_add!(A.refcount, 1)
     return PooledArray(RefArray(getindex(A.refs, I...)), A.invpool, A.pool, A.refcount)
 end
 
 # Dispatch our implementation for these cases instead of Base
-function Base.@propagate_inbounds Base.getindex(A::PooledArray, I::AbstractVector)
+Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::AbstractVector)
     Threads.atomic_add!(A.refcount, 1)
     return PooledArray(RefArray(getindex(A.refs, I)), A.invpool, A.pool, A.refcount)
 end
 
-function Base.@propagate_inbounds Base.getindex(A::PooledArray, I::AbstractArray)
+Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::AbstractArray)
         Threads.atomic_add!(A.refcount, 1)
 
     return PooledArray(RefArray(getindex(A.refs, I)), A.invpool, A.pool, A.refcount)
