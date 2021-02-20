@@ -76,7 +76,7 @@ PooledArray(refs::RefArray{R}, invpool::Dict{T,R}, pool::Vector{T}=_invert(invpo
 
 function PooledArray(d::PooledArray)
     Threads.atomic_add!(d.refcount, 1)
-    return PooledArray(RefArray(copy(d.refs.a), d.invpool, d.pool, d.refcount)
+    return PooledArray(RefArray(copy(d.refs.a)), d.invpool, d.pool, d.refcount)
 end
 
 function _label(xs::AbstractArray,
