@@ -152,14 +152,13 @@ function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
     end
 
     # Assertions are needed since _label is not type stable
-    return PooledArray(RefArray(refs::Vector{R}), invpool::Dict{T,R}, pool, false,
-                       Ref{Threads.ReentrantLock()})
+    return PooledArray(RefArray(refs::Vector{R}), invpool::Dict{T,R}, pool, Threads.Atomic())
 end
 
 function PooledArray{T}(d::AbstractArray; signed::Bool=false, compress::Bool=false) where {T}
     R = signed ? (compress ? Int8 : DEFAULT_SIGNED_REF_TYPE) : (compress ? UInt8 : DEFAULT_POOLED_REF_TYPE)
     refs, invpool, pool = _label(d, T, R)
-    return PooledArray(RefArray(refs), invpool, pool, false, Ref{Threads.ReentrantLock()})
+    return PooledArray(RefArray(refs), invpool, pool, Threads.Atomic())
 end
 
 PooledArray(d::AbstractArray{T}, r::Type) where {T} = PooledArray{T}(d, r)
@@ -272,8 +271,7 @@ function Base.map(f, x::PooledArray{T,R}) where {T,R<:Integer}
         newinvpool = Dict(zip(map(f, ks), vs))
         refarray = copy(x.refs)
     end
-    return PooledArray(RefArray(refarray), newinvpool, _invert(newinvpool), false,
-                       Ref(Threads.ReentrantLock()))
+    return PooledArray(RefArray(refarray), newinvpool, _invert(newinvpool), Threads.Atomic())
 end
 
 ##############################################################################
