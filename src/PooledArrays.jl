@@ -189,7 +189,17 @@ Base.copy(pa::PooledArray) = PooledArray(pa)
 
 Base.copyto!(dest::PooledArray{T, R, N, RA},
              src::PooledArray{T, R, N, RA}) where {T, R, N, RA} =
-    copyto!(dest, 1, src, 1, lenth(src))
+    copyto!(dest, 1, src, 1, length(src))
+
+function Base.copy!(dest::PooledArray{T, R, N, RA},
+                    src::PooledArray{T, R, N, RA}) where {T, R, N, RA}
+    copy!(dest.refs, src.refs)
+    Threads.atomic_add!(src.refcount, 1)
+    dest.pool = src.pool
+    dest.invpool = src.invpool
+    dest.refcount = src.refcount
+    return dest
+end
 
 function Base.copyto!(dest::PooledArray{T, R, N, RA}, doffs::Union{Signed, Unsigned},
                  src::PooledArray{T, R, N, RA}, soffs::Union{Signed, Unsigned},
