@@ -4,8 +4,6 @@ import DataAPI
 
 export PooledArray, PooledVector, PooledMatrix
 
-# TODO: implement compresspool! and compresspool functions that compresses pool of PooledArray
-
 ##############################################################################
 ##
 ## PooledArray type definition
@@ -33,6 +31,7 @@ mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
     refs::RA
     pool::Vector{T}
     invpool::Dict{T,R}
+    # refcount[] is 0 if only one PooledArray holds a reference to pool and invpool
     refcount::Threads.Atomic{Int}
 
     function PooledArray{T,R,N,RA}(rs::RefArray{RA}, invpool::Dict{T, R},
@@ -137,8 +136,7 @@ Note that if you hold mutable objects in `PooledArray` it is not allowed to modi
 after they are stored in it.
 
 In order to improve performance of `getindex` and `copyto!` operations `PooledArray`s
-may share `pool` and `invpool` fields. This sharing is automatically handled
-and is removed for any array sharing common pool if new levels are added to it.
+may share pools.
 
 It is not safe to assign values that are not already present in a `PooledArray`'s pool
 from one thread while either reading or writing to the same array from another thread
@@ -356,22 +354,18 @@ function Base.convert(::Type{PooledArray{S,R1,N}}, pa::PooledArray{T,R2,N}) wher
     if S === R && R1 === R2
         return pa
     else
+        invpool_conv = convert(Dict{S,R1}, pa.invpool)
+        @assert invpool_conv !== pa.invpool
+    end
+
+    if R1 === R2
+        refs_conv = pa.refs
+    else
         refs_conv = convert(Array{R1,N}, pa.refs)
         @assert refs_conv !== pa.refs
-        invpool_conv = convert(Dict{S,R}, pa.invpool)
-        @assert invpool_conv !== pa.invpool
-        return PooledArray(RefArray(refs_conv), invpool_conv)
     end
-end
 
-function Base.convert(::Type{PooledArray{S,R,N}}, pa::PooledArray{T,R,N}) where {S,T,R<:Integer,N}
-    if S === R
-        return pa
-    else
-        invpool_conv = convert(Dict{S,R}, pa.invpool)
-        @assert invpool_conv !== pa.invpool
-        return PooledArray(RefArray(copy(pa.refs)), invpool_conv)
-    end
+    return PooledArray(RefArray(refs_conv), invpool_conv)
 end
 
 Base.convert(::Type{PooledArray{T,R,N}}, pa::PooledArray{T,R,N}) where {T,R<:Integer,N} = pa

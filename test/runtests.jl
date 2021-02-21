@@ -2,6 +2,12 @@ using Test
 using PooledArrays
 using DataAPI: refarray, refvalue, refpool, invrefpool
 
+if Threads.nthreads() < 2
+    @warn("Running with only one thread: correctness of parallel operations is not tested")
+else
+    @show Threads.nthreads()
+end
+
 @testset "PooledArrays" begin
     a = rand(10)
     b = rand(10,10)
@@ -88,7 +94,7 @@ using DataAPI: refarray, refvalue, refpool, invrefpool
     end
     @test refpool(s) == ["a", "b"]
     @test invrefpool(s) == Dict("a" => 1, "b" => 2)
-    
+
     @testset "push!" begin
         xs = PooledArray([10, 20, 30])
         @test xs === push!(xs, -100)
