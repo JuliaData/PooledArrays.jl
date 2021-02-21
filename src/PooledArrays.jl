@@ -31,12 +31,12 @@ mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
     refs::RA
     pool::Vector{T}
     invpool::Dict{T,R}
-    # refcount[] is 0 if only one PooledArray holds a reference to pool and invpool
+    # refcount[] is 1 if only one PooledArray holds a reference to pool and invpool
     refcount::Threads.Atomic{Int}
 
     function PooledArray{T,R,N,RA}(rs::RefArray{RA}, invpool::Dict{T, R},
                                    pool::Vector{T}=_invert(invpool),
-                                   refcount::Threads.Atomic{Int}=Threads.Atomic()) where {T,R,N,RA<:AbstractArray{R, N}}
+                                   refcount::Threads.Atomic{Int}=Threads.Atomic{Int}(1)) where {T,R,N,RA<:AbstractArray{R, N}}
         # this is a quick but incomplete consistency check
         if length(pool) != length(invpool)
             throw(ArgumentError("inconsistent pool and invpool"))
@@ -71,7 +71,7 @@ const PooledMatrix{T,R} = PooledArray{T,R,2}
 
 # Echo inner constructor as an outer constructor
 PooledArray(refs::RefArray{RA}, invpool::Dict{T,R}, pool::Vector{T}=_invert(invpool),
-            refcount::Threads.Atomic{Int}=Threads.Atomic()) where {T,R,RA<:AbstractArray{R}} =
+            refcount::Threads.Atomic{Int}=Threads.Atomic{Int}(1)) where {T,R,RA<:AbstractArray{R}} =
     PooledArray{T,R,ndims(RA),RA}(refs, invpool, pool, refcount)
 
 function PooledArray(d::PooledArray)
@@ -192,9 +192,25 @@ Base.copyto!(dest::PooledArray{T, R, N, RA},
              src::PooledArray{T, R, N, RA}) where {T, R, N, RA} =
     copyto!(dest, 1, src, 1, length(src))
 
+# TODO: handle case when dest is SubArray
+
+Base.copyto!(dest::PooledArray{T, R, N, RA},
+             src::SubArray{T, N, PooledArray{T, R, M, RA}}) where {T, R, N, M, RA} =
+    copyto!(dest, 1, src, 1, length(src))
+
 function Base.copy!(dest::PooledArray{T, R, N, RA},
                     src::PooledArray{T, R, N, RA}) where {T, R, N, RA}
     copy!(dest.refs, src.refs)
+    Threads.atomic_add!(src.refcount, 1)
+    dest.pool = src.pool
+    dest.invpool = src.invpool
+    dest.refcount = src.refcount
+    return dest
+end
+
+function Base.copy!(dest::PooledArray{T, R, N, RA},
+                    src::SubArray{T, N, PooledArray{T, R, M, RA}}) where {T, R, N, M, RA}
+    copy!(dest.refs, view(parent(src).refs, src.indices))
     Threads.atomic_add!(src.refcount, 1)
     dest.pool = src.pool
     dest.invpool = src.invpool
@@ -217,6 +233,7 @@ function Base.copyto!(dest::PooledArray{T, R, N, RA}, doffs::Union{Signed, Unsig
         dest.pool = src.pool
         dest.invpool = src.invpool
         Threads.atomic_sub!(dest.refcount, 1)
+        dest.refcount = src.refcount
         copyto!(dest.refs, doffs, src.refs, soffs, n)
     elseif dest.pool === src.pool && dest.invpool === src.invpool
         copyto!(dest.refs, doffs, src.refs, soffs, n)
@@ -228,6 +245,36 @@ function Base.copyto!(dest::PooledArray{T, R, N, RA}, doffs::Union{Signed, Unsig
     return dest
 end
 
+# TODO: handle case when dest is SubArray
+
+function Base.copyto!(dest::PooledArray{T, R, N, RA}, doffs::Union{Signed, Unsigned},
+                 src::SubArray{T, N, PooledArray{T, R, M, RA}}, soffs::Union{Signed, Unsigned},
+                 n::Union{Signed, Unsigned}) where {T, R, N, M, RA}
+    n == 0 && return dest
+    n > 0 || Base._throw_argerror()
+    if soffs < 1 || doffs < 1 || soffs+n-1 > length(src) || doffs+n-1 > length(dest)
+        throw(BoundsError())
+    end
+
+    src_parent = parent(src)
+
+    if length(dest.pool) == 0
+        @assert length(dest.invpool) == 0
+        Threads.atomic_add!(src_parent.refcount, 1)
+        dest.pool = src_parent.pool
+        dest.invpool = src_parent.invpool
+        Threads.atomic_sub!(dest.refcount, 1)
+        dest.refcount = src_parent.refcount
+        copyto!(dest.refs, doffs, view(src_parent.refs, src.indices), soffs, n)
+    elseif dest.pool === src.pool && dest.invpool === src.invpool
+        copyto!(dest.refs, doffs, view(src_parent.refs, src.indices), soffs, n)
+    else
+        @inbounds for i in 0:n-1
+            dest[dstart+i] = src[sstart+i]
+        end
+    end
+    return dest
+end
 
 function Base.resize!(pa::PooledArray{T,R,1}, n::Integer) where {T,R}
     oldn = length(pa.refs)
@@ -427,10 +474,13 @@ Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::Union{Real, A
     return PooledArray(RefArray(newrefs), A.invpool, A.pool, A.refcount)
 end
 
-# views
-
-Base.view(A::PooledArray, I...) =
-    PooledArray(RefArray(view(A.refs, I...)), A.invpool, A.pool, A.refcount)
+Base.@propagate_inbounds function Base.getindex(A::SubArray{T,N,<:PooledArray}, I::Union{Real, AbstractVector}...)
+    # make sure we do not increase A.refcount in case creation of newrefs fails
+    newrefs = getindex(view(parent(A).refs, A.indices), I...)
+    @assert newrefs isa AbstractArray
+    Threads.atomic_add!(A.refcount, 1)
+    return PooledArray(RefArray(newrefs), A.invpool, A.pool, A.refcount)
+end
 
 ##############################################################################
 ##
@@ -458,11 +508,11 @@ function unsafe_pool_push!(pa::PooledArray{T,R}, val) where {T,R}
            )))
     end
     pool_idx = convert(R, _pool_idx)
-    if pa.refcount[] > 0
+    if pa.refcount[] > 1
         pa.invpool = copy(pa.invpool)
         pa.pool = copy(pa.pool)
         Threads.atomic_sub!(pa.refcount, 1)
-        pa.refcount = Threads.Atomic()
+        pa.refcount = Threads.Atomic{Int}(1)
     end
     pa.invpool[val] = pool_idx
     push!(pa.pool, val)
