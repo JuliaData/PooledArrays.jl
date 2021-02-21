@@ -417,19 +417,13 @@ Base.@propagate_inbounds function Base.isassigned(pa::PooledArray, I::Int...)
     !iszero(pa.refs[I...])
 end
 
-# Other cases
-Base.@propagate_inbounds function Base.getindex(A::PooledArray, I...)
-    new_refs = getindex(A.refs, I...)
-
-    if new_refs isa AbstractArray
-        Threads.atomic_add!(A.refcount, 1)
-        return PooledArray(RefArray(getindex(A.refs, I...)), A.invpool, A.pool, A.refcount)
-    else
-        @assert typeof(new_refs) === eltype(A.refs)
-        # scalar produced
-        iszero(new_refs) && throw(UndefRefError())
-        return @inbounds A.pool[new_refs]
-    end
+# Other cases; we rely on the fact that non-standard indexing will fall back to this eventually
+Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::Union{Real, AbstractVector}...)
+    # make sure we do not increase A.refcount in case creation of newrefs fails
+    newrefs = getindex(A.refs, I...)
+    @assert newrefs isa AbstractArray
+    Threads.atomic_add!(A.refcount, 1)
+    return PooledArray(RefArray(newrefs), A.invpool, A.pool, A.refcount)
 end
 
 ##############################################################################
