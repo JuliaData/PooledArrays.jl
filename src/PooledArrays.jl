@@ -426,6 +426,11 @@ Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::Union{Real, A
     return PooledArray(RefArray(newrefs), A.invpool, A.pool, A.refcount)
 end
 
+# views
+
+Base.view(A::PooledArray, I...) =
+    PooledArray(RefArray(view(A.refs, I...)), A.invpool, A.pool, A.refcount)
+
 ##############################################################################
 ##
 ## setindex!() definitions
