@@ -140,8 +140,10 @@ In order to improve performance of `getindex` and `copyto!` operations `PooledAr
 may share `pool` and `invpool` fields. This sharing is automatically handled
 and is removed for any array sharing common pool if new levels are added to it.
 
-It is not thread safe to use add new levels to `PooledArray` (both for the single
-`PooledArray` and in case of several `PooledArrays` sharing a common pool described above).
+It is not safe to assign values that are not already present in a `PooledArray`'s pool
+from one thread while either reading or writing to the same array from another thread
+(even if pools are not shared). However, reading and writing from different threads is safe
+if all values already exist in the pool.
 """
 PooledArray
 
@@ -153,13 +155,13 @@ function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
     end
 
     # Assertions are needed since _label is not type stable
-    return PooledArray(RefArray(refs::Vector{R}), invpool::Dict{T,R}, pool, Threads.Atomic())
+    return PooledArray(RefArray(refs::Vector{R}), invpool::Dict{T,R}, pool)
 end
 
 function PooledArray{T}(d::AbstractArray; signed::Bool=false, compress::Bool=false) where {T}
     R = signed ? (compress ? Int8 : DEFAULT_SIGNED_REF_TYPE) : (compress ? UInt8 : DEFAULT_POOLED_REF_TYPE)
     refs, invpool, pool = _label(d, T, R)
-    return PooledArray(RefArray(refs), invpool, pool, Threads.Atomic())
+    return PooledArray(RefArray(refs), invpool, pool)
 end
 
 PooledArray(d::AbstractArray{T}, r::Type) where {T} = PooledArray{T}(d, r)
@@ -286,7 +288,7 @@ function Base.map(f, x::PooledArray{T,R}) where {T,R<:Integer}
         newinvpool = Dict(zip(map(f, ks), vs))
         refarray = copy(x.refs)
     end
-    return PooledArray(RefArray(refarray), newinvpool, _invert(newinvpool), Threads.Atomic())
+    return PooledArray(RefArray(refarray), newinvpool)
 end
 
 ##############################################################################
@@ -421,7 +423,7 @@ Base.@propagate_inbounds function Base.isassigned(pa::PooledArray, I::Int...)
     !iszero(pa.refs[I...])
 end
 
-# Other cases case
+# Other cases
 Base.@propagate_inbounds function Base.getindex(A::PooledArray, I...)
     new_refs = getindex(A.refs, I...)
 
