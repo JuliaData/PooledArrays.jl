@@ -35,8 +35,8 @@ mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
     refcount::Threads.Atomic{Int}
 
     function PooledArray{T,R,N,RA}(rs::RefArray{RA}, invpool::Dict{T, R},
-                         pool::Vector{T}=_invert(invpool),
-                         refcount::Threads.Atomic{Int}=Threads.Atomic()) where {T,R,N,RA<:AbstractArray{R, N}}
+                                   pool::Vector{T}=_invert(invpool),
+                                   refcount::Threads.Atomic{Int}=Threads.Atomic()) where {T,R,N,RA<:AbstractArray{R, N}}
         # this is a quick but incomplete consistency check
         if length(pool) != length(invpool)
             throw(ArgumentError("inconsistent pool and invpool"))
@@ -136,7 +136,8 @@ Note that if you hold mutable objects in `PooledArray` it is not allowed to modi
 after they are stored in it.
 
 In order to improve performance of `getindex` and `copyto!` operations `PooledArray`s
-may share pools.
+may share pools. This sharing is automatically undone by copying a shared pool before
+adding new values to it.
 
 It is not safe to assign values that are not already present in a `PooledArray`'s pool
 from one thread while either reading or writing to the same array from another thread
