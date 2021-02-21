@@ -109,15 +109,15 @@ _widen(::Type{Int32}) = Int64
 
 Freshly allocate `PooledArray` using the given array as a source where each
 element will be referenced as an integer of the given type.
-If no `reftype` is specified one is chosen automatically based on the number of unique elements.
-The Boolean keyword arguments, `signed` and `compress` determine the choice of `reftype`.
-By default, unsigned integers are used, as they have a greater maxtype than the same size of
-signed integer.  However, the Arrow standard at https://arrow.apache.org/, as implemented in
-the Arrow package, requires signed integer types, which are provided when `signed` is `true`.
-The `compress` argument controls whether the default size of 32 bits is used (`UInt32` for
-unsigned, `Int32` for signed) or if smaller integer types are chosen when they can be used.
-If `array` is not a `PooledArray` then the order of elements in `refpool` in the resulting
-`PooledArray` is the order of first appereance of elements in `array`.
+
+If `reftype` is not specified, Boolean keyword arguments `signed` and `compress`
+determine the type of integer references. By default (`signed=false`), unsigned integers
+are used, as they have a greater range.
+However, the Arrow standard at https://arrow.apache.org/, as implemented in
+the Arrow package, requires signed integer types, which are provided when `signed=true`.
+When `compress=false`, `reftype` is a 32-bits type (`UInt32` for unsigned, `Int32` for signed);
+when `compress=true`, `reftype` is chosen to be the smallest integer type that is
+large enough to hold all unique values in `array`.
 
 Note that if you hold mutable objects in `PooledArray` it is not allowed to modify them
 after they are stored in it.
