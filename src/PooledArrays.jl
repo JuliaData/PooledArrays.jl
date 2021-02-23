@@ -223,7 +223,7 @@ function Base.copyto!(dest::PooledArray{T, R, N, RA}, doffs::Union{Signed, Unsig
                  n::Union{Signed, Unsigned}) where {T, R, N, RA}
     n == 0 && return dest
     n > 0 || Base._throw_argerror()
-    if soffs < 1 || doffs < 1 || soffs+n-1 > length(src) || doffs+n-1 > length(dest)
+    if soffs < 1 || doffs < 1 || soffs + n - 1 > length(src) || doffs + n - 1 > length(dest)
         throw(BoundsError())
     end
 
@@ -252,7 +252,7 @@ function Base.copyto!(dest::PooledArray{T, R, N, RA}, doffs::Union{Signed, Unsig
                  n::Union{Signed, Unsigned}) where {T, R, N, M, RA}
     n == 0 && return dest
     n > 0 || Base._throw_argerror()
-    if soffs < 1 || doffs < 1 || soffs+n-1 > length(src) || doffs+n-1 > length(dest)
+    if soffs < 1 || doffs < 1 || soffs + n - 1 > length(src) || doffs + n - 1 > length(dest)
         throw(BoundsError())
     end
 
