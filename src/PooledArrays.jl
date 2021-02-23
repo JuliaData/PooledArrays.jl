@@ -227,6 +227,9 @@ function Base.copyto!(dest::PooledArray{T, R, N, RA}, doffs::Union{Signed, Unsig
         throw(BoundsError())
     end
 
+    # if dest.pool is empty we can safely replace it as we are sure it holds
+    # no information; having this path is useful because then we can efficiently
+    # `copyto!` into a fresh `PooledArray` created using the `similar` function
     if length(dest.pool) == 0
         @assert length(dest.invpool) == 0
         Threads.atomic_add!(src.refcount, 1)
