@@ -56,7 +56,7 @@ const PooledVector{T,R} = PooledArray{T,R,1}
 const PooledMatrix{T,R} = PooledArray{T,R,2}
 
 const PooledArrOrSub{T, N, R} = Union{PooledArray{T, R, N},
-                                      SubArray{T, N, <:PooledArray{T, R}}} where {T, R, N}
+                                      SubArray{T, N, <:PooledArray{T, R}}}
 
 ##############################################################################
 ##
