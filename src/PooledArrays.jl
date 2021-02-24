@@ -440,20 +440,14 @@ Base.convert(::Type{Array}, pa::PooledArray{T, R, N}) where {T, R, N} = convert(
 ##############################################################################
 
 # Scalar case
-Base.@propagate_inbounds function Base.getindex(pa::PooledArray, I::Integer...)
-    idx = pa.refs[I...]
-    iszero(idx) && throw(UndefRefError())
-    return @inbounds pa.pool[idx]
-end
-
-Base.@propagate_inbounds function Base.getindex(pav::SubArray{<:Any,<:Any,<:PooledArray}, I::Integer...)
+Base.@propagate_inbounds function Base.getindex(pav::PooledArrOrSub, I::Integer...)
     idx = DataAPI.refarray(pav)[I...]
     iszero(idx) && throw(UndefRefError())
     return @inbounds DataAPI.refpool(pav)[idx]
 end
 
 # this is needed due to dispatch ambiguities
-Base.@propagate_inbounds function Base.getindex(pav::SubArray{T,N,<:PooledArray}, I::Vararg{Int,N}) where {T,N}
+Base.@propagate_inbounds function Base.getindex(pav::PooledArrOrSub{T,N}, I::Vararg{Int,N}) where {T,N}
     idx = DataAPI.refarray(pav)[I...]
     iszero(idx) && throw(UndefRefError())
     return @inbounds DataAPI.refpool(pav)[idx]
