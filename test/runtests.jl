@@ -353,3 +353,62 @@ end
     @test refcount(pa2)[] == 1
     @test pa2 == [1, 2, 3]
 end
+
+@testset "reverse" begin
+    pa1 = PooledArray([1, 2, 3])
+    pa2 = reverse(pa1)
+    pa3 = reverse(pa2)
+    @test pa2 == [3, 2, 1]
+    @test pa3 == pa1
+    @test refpool(pa1) === refpool(pa2) === refpool(pa3)
+    @test invrefpool(pa1) === invrefpool(pa2) === invrefpool(pa3)
+    @test refcount(pa1) === refcount(pa2) === refcount(pa3)
+    @test refcount(pa1)[] == 3
+end
+
+@testset "convert" begin
+    pa1 = PooledArray([1, 2, 3])
+    @test convert(PooledArray, pa1) === pa1
+    @test eltype(convert(PooledArray{Float64}, pa1)) === Float64
+    @test convert(PooledArray{Int, UInt64, 1}, pa1) isa PooledArray{Int,UInt64,1,Array{UInt64,1}}
+end
+
+@testset "indexing" begin
+    pa = PooledArray([1 2; 3 4])
+    @test pa[2, 2, 1] == 4
+    @test pa[2, 2] == 4
+    @test pa[big(2), 2] == 4
+    pav = view(pa, :, :)
+    @test pav[2, 2, 1] == 4
+    @test pav[2, 2] == 4
+    @test pav[big(2), 2] == 4
+
+    @test refcount(pa)[] == 1
+    pa2 = pa[[true, false, false, true]]
+    @test pa2 == [1, 4]
+    @test refpool(pa) === refpool(pa2)
+    @test invrefpool(pa) === invrefpool(pa2)
+    @test refcount(pa) === refcount(pa2)
+    @test refcount(pa)[] == 2
+    pa3 = pav[[true, false, false, true]]
+    @test pa3 == [1, 4]
+    @test refpool(pa) === refpool(pa3)
+    @test invrefpool(pa) === invrefpool(pa3)
+    @test refcount(pa) === refcount(pa3)
+    @test refcount(pa)[] == 3
+end
+
+@testset "isassigned" begin
+    pa1 = PooledArray(["a"])
+    pa2 = similar(pa1, 2)
+    pa2v = view(pa2, 1)
+    @test !isassigned(pa2, 1)
+    @test !isassigned(pa2v)
+end
+
+@testset "setindex!" begin
+    pa = PooledArray([1 2; 3 4])
+    pa[1, 1] = 10
+    @test pa == [10 2; 3 4]
+    @test [pa pa] == [10 2 10 2; 3 4 3 4]
+end

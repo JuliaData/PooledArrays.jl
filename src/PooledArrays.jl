@@ -396,7 +396,7 @@ Base.sort(pa::PooledArray; kw...) = pa[sortperm(pa; kw...)]
 ##############################################################################
 
 function Base.convert(::Type{PooledArray{S,R1,N}}, pa::PooledArray{T,R2,N}) where {S,T,R1<:Integer,R2<:Integer,N}
-    if S === R && R1 === R2
+    if S === T && R1 === R2
         return pa
     else
         invpool_conv = convert(Dict{S,R1}, pa.invpool)
@@ -454,35 +454,35 @@ Base.convert(::Type{Array}, pa::PooledArray{T, R, N}) where {T, R, N} = convert(
 # We need separate functions due to dispatch ambiguities
 
 for T in (PooledArray, SubArray{<:Any, <:Any, <:PooledArray})
-    @eval Base.@propagate_inbounds function Base.getindex(pav::$T, I::Integer...)
-        idx = DataAPI.refarray(pav)[I...]
+    @eval Base.@propagate_inbounds function Base.getindex(A::$T, I::Integer...)
+        idx = DataAPI.refarray(A)[I...]
         iszero(idx) && throw(UndefRefError())
-        return @inbounds DataAPI.refpool(pav)[idx]
+        return @inbounds DataAPI.refpool(A)[idx]
     end
 
     @eval Base.@propagate_inbounds function Base.getindex(A::$T, I::Union{Real, AbstractVector}...)
         # make sure we do not increase A.refcount in case creation of newrefs fails
-        newrefs = getindex(A.refs, I...)
+        newrefs = getindex(DataAPI.refarray(A), I...)
         @assert newrefs isa AbstractArray
-        Threads.atomic_add!(A.refcount, 1)
-        return PooledArray(RefArray(newrefs), A.invpool, A.pool, A.refcount)
+        Threads.atomic_add!(refcount(A), 1)
+        return PooledArray(RefArray(newrefs), DataAPI.invrefpool(A), DataAPI.refpool(A), refcount(A))
     end
 end
 
-Base.@propagate_inbounds function Base.getindex(pav::PooledArray{<:Any, <:Integer, N}, I::Vararg{Int,N}) where {T,N}
-    idx = DataAPI.refarray(pav)[I...]
+Base.@propagate_inbounds function Base.getindex(A::PooledArray{<:Any, <:Integer, N}, I::Vararg{Int,N}) where {T,N}
+    idx = DataAPI.refarray(A)[I...]
     iszero(idx) && throw(UndefRefError())
-    return @inbounds DataAPI.refpool(pav)[idx]
+    return @inbounds DataAPI.refpool(A)[idx]
 end
 
-Base.@propagate_inbounds function Base.getindex(pav::SubArray{<:Any, N, <:PooledArray}, I::Vararg{Int,N}) where {T,N}
-    idx = DataAPI.refarray(pav)[I...]
+Base.@propagate_inbounds function Base.getindex(A::SubArray{<:Any, N, <:PooledArray}, I::Vararg{Int,N}) where {T,N}
+    idx = DataAPI.refarray(A)[I...]
     iszero(idx) && throw(UndefRefError())
-    return @inbounds DataAPI.refpool(pav)[idx]
+    return @inbounds DataAPI.refpool(A)[idx]
 end
 
-Base.@propagate_inbounds function Base.isassigned(pa::PooledArray, I::Int...)
-    !iszero(pa.refs[I...])
+Base.@propagate_inbounds function Base.isassigned(pa::PooledArrOrSub, I::Int...)
+    !iszero(DataAPI.refarray(pa)[I...])
 end
 
 ##############################################################################
@@ -522,7 +522,11 @@ function unsafe_pool_push!(pa::PooledArray{T,R}, val) where {T,R}
     pool_idx
 end
 
-Base.@propagate_inbounds function Base.setindex!(x::PooledArray, val, ind::Integer)
+# assume PooledArray is only used with Arrays as this is what _label does
+# this simplifies code below
+Base.IndexStyle(::Type{<:PooledArray}) = IndexLinear()
+
+Base.@propagate_inbounds function Base.setindex!(x::PooledArray, val, ind::Int)
     x.refs[ind] = getpoolidx(x, val)
     return x
 end
