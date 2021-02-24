@@ -176,6 +176,7 @@ end
 
     pav = @view pa[1]
     pa3 = copy(pav)
+    @test pa3 isa PooledArray{Int, UInt32, 0}
     @test pa.refcount[] == 3
     @test DataAPI.refarray(pav) == pa3.refs
     @test pa.refs !== pa3.refs

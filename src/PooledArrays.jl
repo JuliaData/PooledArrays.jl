@@ -439,15 +439,31 @@ Base.convert(::Type{Array}, pa::PooledArray{T, R, N}) where {T, R, N} = convert(
 ##
 ##############################################################################
 
-# Scalar case
-Base.@propagate_inbounds function Base.getindex(pav::PooledArrOrSub, I::Integer...)
+# We need separate functions due to dispatch ambiguities
+
+for T in (PooledArray, SubArray{<:Any, <:Any, <:PooledArray})
+    @eval Base.@propagate_inbounds function Base.getindex(pav::$T, I::Integer...)
+        idx = DataAPI.refarray(pav)[I...]
+        iszero(idx) && throw(UndefRefError())
+        return @inbounds DataAPI.refpool(pav)[idx]
+    end
+
+    @eval Base.@propagate_inbounds function Base.getindex(A::$T, I::Union{Real, AbstractVector}...)
+        # make sure we do not increase A.refcount in case creation of newrefs fails
+        newrefs = getindex(A.refs, I...)
+        @assert newrefs isa AbstractArray
+        Threads.atomic_add!(A.refcount, 1)
+        return PooledArray(RefArray(newrefs), A.invpool, A.pool, A.refcount)
+    end
+end
+
+Base.@propagate_inbounds function Base.getindex(pav::PooledArray{<:Any, <:Integer, N}, I::Vararg{Int,N}) where {T,N}
     idx = DataAPI.refarray(pav)[I...]
     iszero(idx) && throw(UndefRefError())
     return @inbounds DataAPI.refpool(pav)[idx]
 end
 
-# this is needed due to dispatch ambiguities
-Base.@propagate_inbounds function Base.getindex(pav::PooledArrOrSub{T,N}, I::Vararg{Int,N}) where {T,N}
+Base.@propagate_inbounds function Base.getindex(pav::SubArray{<:Any, N, <:PooledArray}, I::Vararg{Int,N}) where {T,N}
     idx = DataAPI.refarray(pav)[I...]
     iszero(idx) && throw(UndefRefError())
     return @inbounds DataAPI.refpool(pav)[idx]
@@ -455,24 +471,6 @@ end
 
 Base.@propagate_inbounds function Base.isassigned(pa::PooledArray, I::Int...)
     !iszero(pa.refs[I...])
-end
-
-# Other cases; we rely on the fact that non-standard indexing will fall back to this eventually
-Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::Union{Real, AbstractVector}...)
-    # make sure we do not increase A.refcount in case creation of newrefs fails
-    newrefs = getindex(A.refs, I...)
-    @assert newrefs isa AbstractArray
-    Threads.atomic_add!(A.refcount, 1)
-    return PooledArray(RefArray(newrefs), A.invpool, A.pool, A.refcount)
-end
-
-Base.@propagate_inbounds function Base.getindex(A::SubArray{<:Any,<:Any,<:PooledArray},
-                                                I::Union{Real, AbstractVector}...)
-    # make sure we do not increase A.refcount in case creation of newrefs fails
-    newrefs = getindex(DataAPI.refarray(A), I...)
-    @assert newrefs isa AbstractArray
-    Threads.atomic_add!(A.refcount, 1)
-    return PooledArray(RefArray(newrefs), A.invpool, A.pool, A.refcount)
 end
 
 ##############################################################################
