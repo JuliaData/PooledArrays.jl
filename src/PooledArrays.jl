@@ -218,8 +218,8 @@ function copy!(dest::PooledArray{T, R, N},
 end
 
 function Base.copyto!(dest::PooledArrOrSub{T, N, R}, doffs::Union{Signed, Unsigned},
-                 src::PooledArrOrSub{T, N, R}, soffs::Union{Signed, Unsigned},
-                 n::Union{Signed, Unsigned}) where {T, N, R}
+                      src::PooledArrOrSub{T, N, R}, soffs::Union{Signed, Unsigned},
+                      n::Union{Signed, Unsigned}) where {T, N, R}
     n == 0 && return dest
     n > 0 || Base._throw_argerror()
     if soffs < 1 || doffs < 1 || soffs + n - 1 > length(src) || doffs + n - 1 > length(dest)
@@ -240,8 +240,9 @@ function Base.copyto!(dest::PooledArrOrSub{T, N, R}, doffs::Union{Signed, Unsign
         Threads.atomic_sub!(dest_pa.refcount, 1)
         dest_pa.refcount = src_refcount
         copyto!(DataAPI.refarray(dest), doffs, DataAPI.refarray(src), soffs, n)
-    elseif dest.pool === DataAPI.refpool(src) && dest.invpool === DataAPI.invpool(src)
-        copyto!(DataAPI.refarray(dest), doffs, DataAPIR.refarray(src), soffs, n)
+    elseif dest.pool === DataAPI.refpool(src)
+        @assert dest.invpool === DataAPI.invpool(src)
+        copyto!(DataAPI.refarray(dest), doffs, DataAPI.refarray(src), soffs, n)
     else
         @inbounds for i in 0:n-1
             dest[dstart+i] = src[sstart+i]
