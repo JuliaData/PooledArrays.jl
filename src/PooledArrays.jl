@@ -228,8 +228,8 @@ function copy!(dest::PooledArray{T, R, N},
 end
 
 function Base.copyto!(dest::PooledArrOrSub{T, N, R}, doffs::Union{Signed, Unsigned},
-                 src::PooledArrOrSub{T, N, R}, soffs::Union{Signed, Unsigned},
-                 n::Union{Signed, Unsigned}) where {T, N, R}
+                      src::PooledArrOrSub{T, N, R}, soffs::Union{Signed, Unsigned},
+                      n::Union{Signed, Unsigned}) where {T, N, R}
     n == 0 && return dest
     n > 0 || Base._throw_argerror()
     if soffs < 1 || doffs < 1 || soffs + n - 1 > length(src) || doffs + n - 1 > length(dest)
@@ -242,7 +242,10 @@ function Base.copyto!(dest::PooledArrOrSub{T, N, R}, doffs::Union{Signed, Unsign
     # if dest_pa.pool is empty we can safely replace it as we are sure it holds
     # no information; having this path is useful because then we can efficiently
     # `copyto!` into a fresh `PooledArray` created using the `similar` function
-    if length(dest_pa.pool) == 0
+    if DataAPI.refpool(dest) === DataAPI.refpool(src)
+        @assert DataAPI.invrefpool(dest) === DataAPI.invrefpool(src)
+        copyto!(DataAPI.refarray(dest), doffs, DataAPI.refarray(src), soffs, n)
+    elseif length(dest_pa.pool) == 0
         @assert length(dest_pa.invpool) == 0
         Threads.atomic_add!(src_refcount, 1)
         dest_pa.pool = DataAPI.refpool(src)
@@ -250,8 +253,6 @@ function Base.copyto!(dest::PooledArrOrSub{T, N, R}, doffs::Union{Signed, Unsign
         Threads.atomic_sub!(dest_pa.refcount, 1)
         dest_pa.refcount = src_refcount
         copyto!(DataAPI.refarray(dest), doffs, DataAPI.refarray(src), soffs, n)
-    elseif dest.pool === DataAPI.refpool(src) && dest.invpool === DataAPI.invrefpool(src)
-        copyto!(DataAPI.refarray(dest), doffs, DataAPIR.refarray(src), soffs, n)
     else
         @inbounds for i in 0:n-1
             dest[dstart+i] = src[sstart+i]
