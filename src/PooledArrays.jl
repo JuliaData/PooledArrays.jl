@@ -1,6 +1,7 @@
 module PooledArrays
 
 import DataAPI
+import Future.copy!
 
 export PooledArray, PooledVector, PooledMatrix
 
@@ -207,12 +208,6 @@ Base.length(pa::PooledArray) = length(pa.refs)
 Base.lastindex(pa::PooledArray) = lastindex(pa.refs)
 
 Base.copy(pa::PooledArrOrSub) = PooledArray(pa)
-
-if isdefined(Base, :copy!)
-    import Base.copy!
-else
-    import Future: copy!
-end
 
 # here we do not allow dest to be SubArray as copy! is intended to replace whole arrays
 # slow path will be used for SubArray
@@ -466,6 +461,17 @@ for T in (PooledArray, SubArray{<:Any, <:Any, <:PooledArray})
         @assert newrefs isa AbstractArray
         Threads.atomic_add!(refcount(A), 1)
         return PooledArray(RefArray(newrefs), DataAPI.invrefpool(A), DataAPI.refpool(A), refcount(A))
+    end
+end
+
+if VERSION < v"1.1"
+    Base.@propagate_inbounds function Base.getindex(A::SubArray{T,D,P,I,true} ,
+                                                    i::Int) where {I<:Tuple{Union{Base.Slice,
+                                                                                  AbstractUnitRange},
+                                                                            Vararg{Any}}, P<:PooledArray, T, D}
+        idx = DataAPI.refarray(A)[i]
+        iszero(idx) && throw(UndefRefError())
+        return @inbounds DataAPI.refpool(A)[idx]
     end
 end
 
