@@ -232,14 +232,14 @@ end
     @test pat1 == pa1
     @test DataAPI.refpool(pat1) == DataAPI.refpool(pa1)
     @test DataAPI.invrefpool(pat1) == DataAPI.invrefpool(pa1)
-    @test refcount(pat1) == refcount(pa1)
+    @test refcount(pat1) === refcount(pa1)
     @test refcount(pat1)[] == 3
 
     copy!(pat1, pav1)
     @test pat1 == pav1
     @test DataAPI.refpool(pat1) == DataAPI.refpool(pav1)
     @test DataAPI.invrefpool(pat1) == DataAPI.invrefpool(pav1)
-    @test refcount(pat1) == refcount(pav1)
+    @test refcount(pat1) === refcount(pav1)
     @test refcount(pat1)[] == 3
 
     pat2 = PooledArray(fill(0))
@@ -247,17 +247,16 @@ end
     @test pat2 == pa2
     @test DataAPI.refpool(pat2) == DataAPI.refpool(pa2)
     @test DataAPI.invrefpool(pat2) == DataAPI.invrefpool(pa2)
-    @test refcount(pat2) == refcount(pa2)
+    @test refcount(pat2) === refcount(pa2)
     @test refcount(pat2)[] == 2
 
-    copy!(pat2, pav1)
+    copy!(pat2, pav2)
     @test pat2 == pav2
     @test DataAPI.refpool(pat2) == DataAPI.refpool(pav2)
     @test DataAPI.invrefpool(pat2) == DataAPI.invrefpool(pav2)
-    @test refcount(pat2) == refcount(pav2)
-    @test refcount(pat2)[] == 1
-    @test refcount(pa)[] == 4
-
+    @test refcount(pat2) === refcount(pav2)
+    @test refcount(pat2)[] == 4
+    @test refcount(pa2)[] == 1
 end
 
 @testset "correct refcount when treading" begin
