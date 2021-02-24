@@ -55,6 +55,9 @@ end
 const PooledVector{T,R} = PooledArray{T,R,1}
 const PooledMatrix{T,R} = PooledArray{T,R,2}
 
+const PooledArrOrSub{T, N, R} = Union{PooledArray{T, R, N},
+                                      SubArray{T, N, <:PooledArray{T, R}}} where {T, R, N}
+
 ##############################################################################
 ##
 ## PooledArray constructors
@@ -181,6 +184,13 @@ DataAPI.refarray(pa::PooledArray) = pa.refs
 DataAPI.refvalue(pa::PooledArray, i::Integer) = pa.pool[i]
 DataAPI.refpool(pa::PooledArray) = pa.pool
 DataAPI.invrefpool(pa::PooledArray) = pa.invpool
+refcount(pa::PooledArray) = pa.refcount
+
+DataAPI.refarray(pav::SubArray{<:Any, <:Any, <:PooledArray}) = view(parent(pav).refs, pav.indices)
+DataAPI.refvalue(pav::SubArray{<:Any, <:Any, <:PooledArray}, i::Integer) = parent(pav).pool[i]
+DataAPI.refpool(pav::SubArray{<:Any, <:Any, <:PooledArray}) = parent(pav).pool
+DataAPI.invrefpool(pav::SubArray{<:Any, <:Any, <:PooledArray}) = parent(pav).invpool
+refcount(pav::SubArray{<:Any, <:Any, <:PooledArray}) = parent(pav).refcount
 
 Base.size(pa::PooledArray) = size(pa.refs)
 Base.length(pa::PooledArray) = length(pa.refs)
@@ -188,89 +198,50 @@ Base.lastindex(pa::PooledArray) = lastindex(pa.refs)
 
 Base.copy(pa::PooledArray) = PooledArray(pa)
 
-Base.copyto!(dest::PooledArray{T, R, N, RA},
-             src::PooledArray{T, R, N, RA}) where {T, R, N, RA} =
-    copyto!(dest, 1, src, 1, length(src))
+if isdefined(Base, :copy!)
+    import Base.copy!
+else
+    import Future: copy!
+end
 
-# TODO: handle case when dest is SubArray
-
-Base.copyto!(dest::PooledArray{T, R, N, RA},
-             src::SubArray{T, N, PooledArray{T, R, M, RA}}) where {T, R, N, M, RA} =
-    copyto!(dest, 1, src, 1, length(src))
-
-function Base.copy!(dest::PooledArray{T, R, N, RA},
-                    src::PooledArray{T, R, N, RA}) where {T, R, N, RA}
-    copy!(dest.refs, src.refs)
-    Threads.atomic_add!(src.refcount, 1)
-    dest.pool = src.pool
-    dest.invpool = src.invpool
-    dest.refcount = src.refcount
+# here we do not allow dest to be SubArray as copy! is intended to replace whole arrays
+# slow path will be used for SubArray
+function copy!(dest::PooledArray{T, R, N},
+               src::PooledArrOrSub{T, N, R}) where {T, N, R}
+    copy!(dest.refs, DataAPI.refarray(src))
+    src_refcount = refcount(src)
+    Threads.atomic_add!(src_refcount, 1)
+    dest.pool = DataAPI.refpool(src)
+    dest.invpool = DataAPI.invrefpool(src)
+    dest.refcount = src_refcount
     return dest
 end
 
-function Base.copy!(dest::PooledArray{T, R, N, RA},
-                    src::SubArray{T, N, PooledArray{T, R, M, RA}}) where {T, R, N, M, RA}
-    copy!(dest.refs, view(parent(src).refs, src.indices))
-    Threads.atomic_add!(src.refcount, 1)
-    dest.pool = src.pool
-    dest.invpool = src.invpool
-    dest.refcount = src.refcount
-    return dest
-end
-
-function Base.copyto!(dest::PooledArray{T, R, N, RA}, doffs::Union{Signed, Unsigned},
-                 src::PooledArray{T, R, N, RA}, soffs::Union{Signed, Unsigned},
-                 n::Union{Signed, Unsigned}) where {T, R, N, RA}
+function Base.copyto!(dest::PooledArrOrSub{T, N, R}, doffs::Union{Signed, Unsigned},
+                 src::PooledArrOrSub{T, N, R}, soffs::Union{Signed, Unsigned},
+                 n::Union{Signed, Unsigned}) where {T, N, R}
     n == 0 && return dest
     n > 0 || Base._throw_argerror()
     if soffs < 1 || doffs < 1 || soffs + n - 1 > length(src) || doffs + n - 1 > length(dest)
         throw(BoundsError())
     end
 
-    # if dest.pool is empty we can safely replace it as we are sure it holds
+    dest_pa = dest isa PooledArray ? dest : parent(dest)
+    src_refcount = refcount(src)
+
+    # if dest_pa.pool is empty we can safely replace it as we are sure it holds
     # no information; having this path is useful because then we can efficiently
     # `copyto!` into a fresh `PooledArray` created using the `similar` function
-    if length(dest.pool) == 0
-        @assert length(dest.invpool) == 0
-        Threads.atomic_add!(src.refcount, 1)
-        dest.pool = src.pool
-        dest.invpool = src.invpool
-        Threads.atomic_sub!(dest.refcount, 1)
-        dest.refcount = src.refcount
-        copyto!(dest.refs, doffs, src.refs, soffs, n)
-    elseif dest.pool === src.pool && dest.invpool === src.invpool
-        copyto!(dest.refs, doffs, src.refs, soffs, n)
-    else
-        @inbounds for i in 0:n-1
-            dest[dstart+i] = src[sstart+i]
-        end
-    end
-    return dest
-end
-
-# TODO: handle case when dest is SubArray
-
-function Base.copyto!(dest::PooledArray{T, R, N, RA}, doffs::Union{Signed, Unsigned},
-                 src::SubArray{T, N, PooledArray{T, R, M, RA}}, soffs::Union{Signed, Unsigned},
-                 n::Union{Signed, Unsigned}) where {T, R, N, M, RA}
-    n == 0 && return dest
-    n > 0 || Base._throw_argerror()
-    if soffs < 1 || doffs < 1 || soffs + n - 1 > length(src) || doffs + n - 1 > length(dest)
-        throw(BoundsError())
-    end
-
-    src_parent = parent(src)
-
-    if length(dest.pool) == 0
-        @assert length(dest.invpool) == 0
-        Threads.atomic_add!(src_parent.refcount, 1)
-        dest.pool = src_parent.pool
-        dest.invpool = src_parent.invpool
-        Threads.atomic_sub!(dest.refcount, 1)
-        dest.refcount = src_parent.refcount
-        copyto!(dest.refs, doffs, view(src_parent.refs, src.indices), soffs, n)
-    elseif dest.pool === src.pool && dest.invpool === src.invpool
-        copyto!(dest.refs, doffs, view(src_parent.refs, src.indices), soffs, n)
+    if length(dest_pa.pool) == 0
+        @assert length(dest_pa.invpool) == 0
+        Threads.atomic_add!(src_refcount, 1)
+        dest_pa.pool = DataAPI.refpool(src)
+        dest_pa.invpool = DataAPI.invpool(src)
+        Threads.atomic_sub!(dest_pa.refcount, 1)
+        dest_pa.refcount = src_refcount
+        copyto!(DataAPI.refarray(dest), doffs, DataAPI.refarray(src), soffs, n)
+    elseif dest.pool === DataAPI.refpool(src) && dest.invpool === DataAPI.invpool(src)
+        copyto!(DataAPI.refarray(dest), doffs, DataAPIR.refarray(src), soffs, n)
     else
         @inbounds for i in 0:n-1
             dest[dstart+i] = src[sstart+i]
@@ -477,7 +448,8 @@ Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::Union{Real, A
     return PooledArray(RefArray(newrefs), A.invpool, A.pool, A.refcount)
 end
 
-Base.@propagate_inbounds function Base.getindex(A::SubArray{T,N,<:PooledArray}, I::Union{Real, AbstractVector}...)
+Base.@propagate_inbounds function Base.getindex(A::SubArray{<:Any,<:Any,<:PooledArray},
+                                                I::Union{Real, AbstractVector}...)
     # make sure we do not increase A.refcount in case creation of newrefs fails
     newrefs = getindex(view(parent(A).refs, A.indices), I...)
     @assert newrefs isa AbstractArray
