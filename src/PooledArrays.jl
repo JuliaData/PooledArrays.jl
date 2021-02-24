@@ -234,6 +234,10 @@ function copy!(dest::PooledArray{T, R, N},
     return dest
 end
 
+# this is needed as Julia Base uses a special path for this case we want to avoid
+Base.copyto!(dest::PooledArrOrSub{T, N, R}, src::PooledArrOrSub{T, N, R}) where {T, N, R} =
+    copyto!(dest, 1, src, 1, length(src))
+
 function Base.copyto!(dest::PooledArrOrSub{T, N, R}, doffs::Union{Signed, Unsigned},
                       src::PooledArrOrSub{T, N, R}, soffs::Union{Signed, Unsigned},
                       n::Union{Signed, Unsigned}) where {T, N, R}
@@ -251,6 +255,7 @@ function Base.copyto!(dest::PooledArrOrSub{T, N, R}, doffs::Union{Signed, Unsign
     # `copyto!` into a fresh `PooledArray` created using the `similar` function
     if DataAPI.refpool(dest) === DataAPI.refpool(src)
         @assert DataAPI.invrefpool(dest) === DataAPI.invrefpool(src)
+        @assert refcount(dest) === refcount(src)
         copyto!(DataAPI.refarray(dest), doffs, DataAPI.refarray(src), soffs, n)
     elseif length(dest_pa.pool) == 0
         @assert length(dest_pa.invpool) == 0
@@ -262,7 +267,7 @@ function Base.copyto!(dest::PooledArrOrSub{T, N, R}, doffs::Union{Signed, Unsign
         copyto!(DataAPI.refarray(dest), doffs, DataAPI.refarray(src), soffs, n)
     else
         @inbounds for i in 0:n-1
-            dest[dstart+i] = src[sstart+i]
+            dest[doffs+i] = src[soffs+i]
         end
     end
     return dest
