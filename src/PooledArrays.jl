@@ -77,9 +77,19 @@ PooledArray(refs::RefArray{RA}, invpool::Dict{T,R}, pool::Vector{T}=_invert(invp
             refcount::Threads.Atomic{Int}=Threads.Atomic{Int}(1)) where {T,R,RA<:AbstractArray{R}} =
     PooledArray{T,R,ndims(RA),RA}(refs, invpool, pool, refcount)
 
-function PooledArray(d::PooledArray)
-    Threads.atomic_add!(d.refcount, 1)
-    return PooledArray(RefArray(copy(d.refs)), d.invpool, d.pool, d.refcount)
+# workaround https://github.com/JuliaLang/julia/pull/39809
+_our_copy(x) = copy(x)
+
+function _our_copy(x::SubArray{<:Any, 0})
+    y = similar(x)
+    y[] = x[]
+    return y
+end
+
+function PooledArray(d::PooledArrOrSub)
+    Threads.atomic_add!(refcount(d), 1)
+    return PooledArray(RefArray(_our_copy(DataAPI.refarray(d))),
+                       DataAPI.invrefpool(d), DataAPI.refpool(d), refcount(d))
 end
 
 function _label(xs::AbstractArray,
@@ -186,7 +196,7 @@ DataAPI.refpool(pa::PooledArray) = pa.pool
 DataAPI.invrefpool(pa::PooledArray) = pa.invpool
 refcount(pa::PooledArray) = pa.refcount
 
-DataAPI.refarray(pav::SubArray{<:Any, <:Any, <:PooledArray}) = view(parent(pav).refs, pav.indices)
+DataAPI.refarray(pav::SubArray{<:Any, <:Any, <:PooledArray}) = view(parent(pav).refs, pav.indices...)
 DataAPI.refvalue(pav::SubArray{<:Any, <:Any, <:PooledArray}, i::Integer) = parent(pav).pool[i]
 DataAPI.refpool(pav::SubArray{<:Any, <:Any, <:PooledArray}) = parent(pav).pool
 DataAPI.invrefpool(pav::SubArray{<:Any, <:Any, <:PooledArray}) = parent(pav).invpool
@@ -196,7 +206,7 @@ Base.size(pa::PooledArray) = size(pa.refs)
 Base.length(pa::PooledArray) = length(pa.refs)
 Base.lastindex(pa::PooledArray) = lastindex(pa.refs)
 
-Base.copy(pa::PooledArray) = PooledArray(pa)
+Base.copy(pa::PooledArrOrSub) = PooledArray(pa)
 
 if isdefined(Base, :copy!)
     import Base.copy!
@@ -236,11 +246,11 @@ function Base.copyto!(dest::PooledArrOrSub{T, N, R}, doffs::Union{Signed, Unsign
         @assert length(dest_pa.invpool) == 0
         Threads.atomic_add!(src_refcount, 1)
         dest_pa.pool = DataAPI.refpool(src)
-        dest_pa.invpool = DataAPI.invpool(src)
+        dest_pa.invpool = DataAPI.invrefpool(src)
         Threads.atomic_sub!(dest_pa.refcount, 1)
         dest_pa.refcount = src_refcount
         copyto!(DataAPI.refarray(dest), doffs, DataAPI.refarray(src), soffs, n)
-    elseif dest.pool === DataAPI.refpool(src) && dest.invpool === DataAPI.invpool(src)
+    elseif dest.pool === DataAPI.refpool(src) && dest.invpool === DataAPI.invrefpool(src)
         copyto!(DataAPI.refarray(dest), doffs, DataAPIR.refarray(src), soffs, n)
     else
         @inbounds for i in 0:n-1
@@ -435,6 +445,19 @@ Base.@propagate_inbounds function Base.getindex(pa::PooledArray, I::Integer...)
     return @inbounds pa.pool[idx]
 end
 
+Base.@propagate_inbounds function Base.getindex(pav::SubArray{<:Any,<:Any,<:PooledArray}, I::Integer...)
+    idx = DataAPI.refarray(pav)[I...]
+    iszero(idx) && throw(UndefRefError())
+    return @inbounds DataAPI.refpool(pav)[idx]
+end
+
+# this is needed due to dispatch ambiguities
+Base.@propagate_inbounds function Base.getindex(pav::SubArray{T,N,<:PooledArray}, I::Vararg{Int,N}) where {T,N}
+    idx = DataAPI.refarray(pav)[I...]
+    iszero(idx) && throw(UndefRefError())
+    return @inbounds DataAPI.refpool(pav)[idx]
+end
+
 Base.@propagate_inbounds function Base.isassigned(pa::PooledArray, I::Int...)
     !iszero(pa.refs[I...])
 end
@@ -451,7 +474,7 @@ end
 Base.@propagate_inbounds function Base.getindex(A::SubArray{<:Any,<:Any,<:PooledArray},
                                                 I::Union{Real, AbstractVector}...)
     # make sure we do not increase A.refcount in case creation of newrefs fails
-    newrefs = getindex(view(parent(A).refs, A.indices), I...)
+    newrefs = getindex(DataAPI.refarray(A), I...)
     @assert newrefs isa AbstractArray
     Threads.atomic_add!(A.refcount, 1)
     return PooledArray(RefArray(newrefs), A.invpool, A.pool, A.refcount)
