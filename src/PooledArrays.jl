@@ -220,10 +220,17 @@ function copy!(dest::PooledArray{T, R, N},
                src::PooledArrOrSub{T, N, R}) where {T, N, R}
     copy!(dest.refs, DataAPI.refarray(src))
     src_refcount = refcount(src)
-    Threads.atomic_add!(src_refcount, 1)
-    dest.pool = DataAPI.refpool(src)
-    dest.invpool = DataAPI.invrefpool(src)
-    dest.refcount = src_refcount
+
+    if dest.pool !== DataAPI.refpool(src)
+        Threads.atomic_sub!(dest.refcount, 1)
+        Threads.atomic_add!(src_refcount, 1)
+        dest.pool = DataAPI.refpool(src)
+        dest.invpool = DataAPI.invrefpool(src)
+        dest.refcount = src_refcount
+    else
+        @assert dest.invpool === DataAPI.invrefpool(src)
+        @assert dest.refcount === src_refcount
+    end
     return dest
 end
 

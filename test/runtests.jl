@@ -1,6 +1,6 @@
 using Test
 using PooledArrays
-using DataAPI: refarray, refvalue, refpool, invrefpool
+using DataAPI: refarray, refvalue, refpool, invrefpool, refcount
 
 if !isdefined(Base, :copy!)
     using Future: copy!
@@ -221,11 +221,62 @@ end
 end
 
 @testset "copy! tests" begin
+    pa = PooledArray(1:4)
+    pa1 = pa[1:2]
+    pav1 = @view pa[2:3]
+    pa2 = PooledArray(fill(2))
+    pav2 = @view pa[3]
+
+    pat1 = PooledArray([0, 0])
+    copy!(pat1, pa1)
+    @test pat1 == pa1
+    @test DataAPI.refpool(pat1) == DataAPI.refpool(pa1)
+    @test DataAPI.invrefpool(pat1) == DataAPI.invrefpool(pa1)
+    @test refcount(pat1) == refcount(pa1)
+    @test refcount(pat1)[] == 3
+
+    copy!(pat1, pav1)
+    @test pat1 == pav1
+    @test DataAPI.refpool(pat1) == DataAPI.refpool(pav1)
+    @test DataAPI.invrefpool(pat1) == DataAPI.invrefpool(pav1)
+    @test refcount(pat1) == refcount(pav1)
+    @test refcount(pat1)[] == 3
+
+    pat2 = PooledArray(fill(0))
+    copy!(pat2, pa2)
+    @test pat2 == pa2
+    @test DataAPI.refpool(pat2) == DataAPI.refpool(pa2)
+    @test DataAPI.invrefpool(pat2) == DataAPI.invrefpool(pa2)
+    @test refcount(pat2) == refcount(pa2)
+    @test refcount(pat2)[] == 2
+
+    copy!(pat2, pav1)
+    @test pat2 == pav2
+    @test DataAPI.refpool(pat2) == DataAPI.refpool(pav2)
+    @test DataAPI.invrefpool(pat2) == DataAPI.invrefpool(pav2)
+    @test refcount(pat2) == refcount(pav2)
+    @test refcount(pat2)[] == 1
+    @test refcount(pa)[] == 4
+
+end
+
+@testset "correct refcount when treading" begin
     pa = PooledArray([1 2; 3 4])
-    pav = @view pa[1:2]
-    pac = @view pa[1:2]
-
-    pa2 = PooledArray([1])
-    pa3 = PooledArray([1 2 3; 4 5 6])
-
+    x = Vector{Any}(undef, 120)
+    Threads.@threads for i in 1:120
+        x[i] = copy(pa)
+    end
+    @test pa.refcount[] == 121
+    Threads.@threads for i in 1:61
+        @test x[i].refcount === pa.refcount
+        x[i][1] = 2
+        @test x[i].refcount === pa.refcount
+        x[i][1] = 5
+        @test x[i].refcount[] == 1
+    end
+    @test pa.refcount[] == 60
+    x = nothing
+    # try to force GC to check finalizer
+    GC.gc(); GC.gc(); GC.gc(); GC.gc()
+    @test pa.refcount[] == 1
 end
