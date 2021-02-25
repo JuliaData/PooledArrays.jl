@@ -391,12 +391,8 @@ Base.sort(pa::PooledArray; kw...) = pa[sortperm(pa; kw...)]
 ##############################################################################
 
 function Base.convert(::Type{PooledArray{S,R1,N}}, pa::PooledArray{T,R2,N}) where {S,T,R1<:Integer,R2<:Integer,N}
-    if S === T && R1 === R2
-        return pa
-    else
-        invpool_conv = convert(Dict{S,R1}, pa.invpool)
-        @assert invpool_conv !== pa.invpool
-    end
+    invpool_conv = convert(Dict{S,R1}, pa.invpool)
+    @assert invpool_conv !== pa.invpool
 
     if R1 === R2
         refs_conv = pa.refs
