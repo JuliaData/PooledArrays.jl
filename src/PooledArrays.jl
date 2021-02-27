@@ -453,7 +453,7 @@ for T in (PooledArray, SubArray{<:Any, <:Any, <:PooledArray})
 
     @eval Base.@propagate_inbounds function Base.getindex(A::$T, I::Union{Real, AbstractVector}...)
         # make sure we do not increase A.refcount in case creation of newrefs fails
-        newrefs = getindex(DataAPI.refarray(A), I...)
+        newrefs = DataAPI.refarray(A)[I...]
         @assert newrefs isa AbstractArray
         Threads.atomic_add!(refcount(A), 1)
         return PooledArray(RefArray(newrefs), DataAPI.invrefpool(A), DataAPI.refpool(A), refcount(A))
