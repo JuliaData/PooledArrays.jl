@@ -371,7 +371,10 @@ end
     pa1 = PooledArray([1, 2, 3])
     @test convert(PooledArray, pa1) === pa1
     @test eltype(convert(PooledArray{Float64}, pa1)) === Float64
-    @test convert(PooledArray{Int, UInt64, 1}, pa1) isa PooledArray{Int,UInt64,1,Array{UInt64,1}}
+    pa1c = convert(PooledArray{Int, UInt64, 1}, pa1)
+    @test pa1c isa PooledArray{Int,UInt64,1,Array{UInt64,1}}
+    @test pa1c == pa1
+    @test !(pa1c isa typeof(pa1))
 end
 
 @testset "indexing" begin
@@ -397,6 +400,32 @@ end
     @test invrefpool(pa) === invrefpool(pa3)
     @test refcount(pa) === refcount(pa3)
     @test refcount(pa)[] == 3
+
+    # these checks are mostly needed to check for dispatch ambiguities
+    @test pa[1] == 1
+    @test pa[1, 1] == 1
+    @test pa[1, 1, 1] == 1
+    @test pa[:] == [1, 3, 2, 4]
+    @test pa[1:4] == [1, 3, 2, 4]
+    @test pa[collect(1:4)] == [1, 3, 2, 4]
+    @test pa[1, 1:2] == [1, 2]
+    @test pa[1, [1, 2]] == [1, 2]
+    @test pa[1:1, 1:2] == [1 2]
+    @test pa[1:1, [1, 2]] == [1 2]
+    @test pa[[1], 1:2] == [1 2]
+    @test pa[[1], [1, 2]] == [1 2]
+    @test pav[1] == 1
+    @test pav[1, 1] == 1
+    @test pav[1, 1, 1] == 1
+    @test pav[:] == [1, 3, 2, 4]
+    @test pav[1:4] == [1, 3, 2, 4]
+    @test pav[collect(1:4)] == [1, 3, 2, 4]
+    @test pav[1, 1:2] == [1, 2]
+    @test pav[1, [1, 2]] == [1, 2]
+    @test pav[1:1, 1:2] == [1 2]
+    @test pav[1:1, [1, 2]] == [1 2]
+    @test pav[[1], 1:2] == [1 2]
+    @test pav[[1], [1, 2]] == [1 2]
 end
 
 @testset "isassigned" begin
@@ -412,4 +441,14 @@ end
     pa[1, 1] = 10
     @test pa == [10 2; 3 4]
     @test [pa pa] == [10 2 10 2; 3 4 3 4]
+    pa[2] = 1000
+    @test pa == [10 2; 1000 4]
+    pa[1, :] = [11, 12]
+    @test pa == [11 12; 1000 4]
+    pa[1:2, 1:1] = [111, 222]
+    @test pa == [111 12; 222 4]
+    pa[1, 1, 1] = 0
+    @test pa == [0 12; 222 4]
+    pa[:] = [1 2; 3 4]
+    @test pa == [1 2; 3 4]
 end

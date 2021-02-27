@@ -475,12 +475,6 @@ if VERSION < v"1.1"
     end
 end
 
-Base.@propagate_inbounds function Base.getindex(A::PooledArray{<:Any, <:Integer, N}, I::Vararg{Int,N}) where {T,N}
-    idx = DataAPI.refarray(A)[I...]
-    iszero(idx) && throw(UndefRefError())
-    return @inbounds DataAPI.refpool(A)[idx]
-end
-
 Base.@propagate_inbounds function Base.getindex(A::SubArray{<:Any, N, <:PooledArray}, I::Vararg{Int,N}) where {T,N}
     idx = DataAPI.refarray(A)[I...]
     iszero(idx) && throw(UndefRefError())
