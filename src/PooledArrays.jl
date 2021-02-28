@@ -471,6 +471,7 @@ if VERSION < v"1.1"
     end
 end
 
+# Defined to avoid ambiguities with Base
 Base.@propagate_inbounds function Base.getindex(A::SubArray{<:Any, N, <:PooledArray}, I::Vararg{Int,N}) where {T,N}
     idx = DataAPI.refarray(A)[I...]
     iszero(idx) && throw(UndefRefError())
