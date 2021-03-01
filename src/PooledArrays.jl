@@ -506,7 +506,7 @@ end
 
 # assume PooledArray is only used with Arrays as this is what _label does
 # this simplifies code below
-Base.IndexStyle(::Type{<:PooledArrOrSub}) = IndexLinear()
+Base.IndexStyle(::Type{<:PooledArray}) = IndexLinear()
 
 Base.@propagate_inbounds function Base.setindex!(x::PooledArray, val, ind::Int)
     x.refs[ind] = getpoolidx(x, val)
