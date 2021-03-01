@@ -42,11 +42,13 @@ mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
         if length(pool) != length(invpool)
             throw(ArgumentError("inconsistent pool and invpool"))
         end
-        # refs mustn't overflow pool
-        minref, maxref = extrema(rs.a)
-        # 0 indicates #undef
-        if length(rs.a) > 0 && (minref < 0 || maxref > length(invpool))
-            throw(ArgumentError("Reference array points beyond the end of the pool"))
+        if length(rs.a) > 0
+            # 0 indicates #undef
+            # refs mustn't overflow pool
+            minref, maxref = extrema(rs.a)
+            if (minref < 0 || maxref > length(invpool))
+                throw(ArgumentError("Reference array points beyond the end of the pool"))
+            end
         end
         pa = new{T,R,N,RA}(rs.a, pool, invpool, refcount)
         finalizer(x -> Threads.atomic_sub!(x.refcount, 1), pa)

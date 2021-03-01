@@ -11,6 +11,8 @@ else
 end
 
 @testset "PooledArrays" begin
+    @test eltype(PooledArray(Int[])) === Int
+
     a = rand(10)
     b = rand(10,10)
     c = rand(1:10, 1000)
