@@ -1,6 +1,14 @@
 using Test
 using PooledArrays
 using DataAPI: refarray, refvalue, refpool, invrefpool
+using PooledArrays: refcount
+import Future.copy!
+
+if Threads.nthreads() < 2
+    @warn("Running with only one thread: correctness of parallel operations is not tested")
+else
+    @show Threads.nthreads()
+end
 
 @testset "PooledArrays" begin
     a = rand(10)
@@ -88,7 +96,7 @@ using DataAPI: refarray, refvalue, refpool, invrefpool
     end
     @test refpool(s) == ["a", "b"]
     @test invrefpool(s) == Dict("a" => 1, "b" => 2)
-    
+
     @testset "push!" begin
         xs = PooledArray([10, 20, 30])
         @test xs === push!(xs, -100)
@@ -116,4 +124,331 @@ using DataAPI: refarray, refvalue, refpool, invrefpool
     @test PooledArrays.fast_sortable(v3) == PooledArray([1, 3, 2, 4])
     @test isbitstype(eltype(PooledArrays.fast_sortable(v3)))
     Base.Order.Perm(Base.Order.Forward, v3).data == PooledArray([1, 3, 2, 4])
+end
+
+@testset "pool non-copying constructor and copy tests" begin
+    pa = PooledArray([1, 2, 3])
+    @test pa.refcount[] == 1
+    pa2 = PooledArray(pa)
+    @test pa.refcount[] == 2
+    @test pa.refs == pa2.refs
+    @test pa.refs !== pa2.refs
+    @test pa.pool === pa2.pool
+    @test pa.invpool === pa2.invpool
+    @test pa.refcount === pa2.refcount
+
+    pav = @view pa[[3, 1]]
+
+    @test pav == [3, 1]
+    @test refarray(pav) isa SubArray{UInt32,1,Array{UInt32,1},Tuple{Array{Int,1}},false}
+    @test refpool(pav) === pa.pool
+    @test invrefpool(pav) === pa.invpool
+    @test_throws BoundsError refvalue(pav, 0)
+    @test refvalue(pav, 1) === 1
+    @test refvalue(pav, 2) === 2
+    @test refvalue(pav, 3) === 3
+    @test_throws BoundsError refvalue(pav, 4)
+
+    @test pa.refcount[] == 2
+    pa3 = PooledArray(pav)
+    @test pa.refcount[] == 3
+    @test pa.refs[[3, 1]] == pa3.refs
+    @test pa.refs !== pa3.refs
+    @test pa.pool === pa3.pool
+    @test pa.invpool === pa3.invpool
+    @test pa.refcount === pa3.refcount
+    pa2 = pa3
+    # try to force GC to check finalizer
+    GC.gc(); GC.gc(); GC.gc(); GC.gc()
+    if pa.refcount[] != 2
+        @warn "finalizer of PooledArray not triggered; excess refs: $(pa.refcount[] - 2)"
+    end
+
+    pa = PooledArray([1, 2, 3])
+    @test pa.refcount[] == 1
+    pa2 = copy(pa)
+    @test pa.refcount[] == 2
+    @test pa.refs == pa2.refs
+    @test pa.refs !== pa2.refs
+    @test pa.pool === pa2.pool
+    @test pa.invpool === pa2.invpool
+    @test pa.refcount === pa2.refcount
+
+    pav = @view pa[1]
+    pa3 = copy(pav)
+    @test pa3 isa PooledArray{Int, UInt32, 0}
+    @test pa.refcount[] == 3
+    @test refarray(pav) == pa3.refs
+    @test pa.refs !== pa3.refs
+    @test pa.pool === pa3.pool
+    @test pa.invpool === pa3.invpool
+    @test pa.refcount === pa3.refcount
+end
+
+@testset "test de-referencing on setindex!" begin
+    pa = PooledArray([1, 2, 3])
+    @test pa.refcount[] == 1
+    pa2 = copy(pa)
+    @test pa.refcount[] == 2
+    old_pool = pa.pool
+    old_invpool = pa.invpool
+    old_refcount = pa.refcount
+
+    # within pool
+    pa2[1] = 3
+    @test pa == 1:3
+    @test pa.pool === old_pool
+    @test pa.invpool === old_invpool
+    @test pa.refcount === old_refcount
+    @test pa.refcount[] == 2
+    @test pa2 == [3, 2, 3]
+    @test pa2.pool === old_pool
+    @test pa2.invpool === old_invpool
+    @test pa2.refcount === old_refcount
+
+    # new value
+    pa2[1] = 4
+    @test pa == 1:3
+    @test pa.pool == old_pool
+    @test pa.invpool == old_invpool
+    @test pa.refcount == old_refcount
+    @test pa.refcount[] == 1
+    @test pa2 == [4, 2, 3]
+    @test pa2.pool !== old_pool
+    @test pa2.invpool !== old_invpool
+    @test pa2.refcount !== old_refcount
+    @test pa2.refcount[] == 1
+end
+
+@testset "copy! tests" begin
+    pa = PooledArray(1:4)
+    pa1 = pa[1:2]
+    pav1 = @view pa[2:3]
+    pa2 = PooledArray(fill(2))
+    pav2 = @view pa[3]
+
+    pat1 = PooledArray([0, 0])
+    copy!(pat1, pa1)
+    @test pat1 == pa1
+    @test refpool(pat1) === refpool(pa1)
+    @test invrefpool(pat1) === invrefpool(pa1)
+    @test refcount(pat1) === refcount(pa1)
+    @test refcount(pat1)[] == 3
+
+    copy!(pat1, pav1)
+    @test pat1 == pav1
+    @test refpool(pat1) === refpool(pav1)
+    @test invrefpool(pat1) === invrefpool(pav1)
+    @test refcount(pat1) === refcount(pav1)
+    @test refcount(pat1)[] == 3
+
+    pat2 = PooledArray(fill(0))
+    copy!(pat2, pa2)
+    @test pat2 == pa2
+    @test refpool(pat2) === refpool(pa2)
+    @test invrefpool(pat2) === invrefpool(pa2)
+    @test refcount(pat2) === refcount(pa2)
+    @test refcount(pat2)[] == 2
+
+    copy!(pat2, pav2)
+    @test pat2 == pav2
+    @test refpool(pat2) === refpool(pav2)
+    @test invrefpool(pat2) === invrefpool(pav2)
+    @test refcount(pat2) === refcount(pav2)
+    @test refcount(pat2)[] == 4
+    @test refcount(pa2)[] == 1
+end
+
+@testset "correct refcount when treading" begin
+    pa = PooledArray([1 2; 3 4])
+    x = Vector{Any}(undef, 120)
+    Threads.@threads for i in 1:120
+        x[i] = copy(pa)
+    end
+    @test pa.refcount[] == 121
+    Threads.@threads for i in 1:61
+        @test x[i].refcount === pa.refcount
+        x[i][1] = 2
+        @test x[i].refcount === pa.refcount
+        x[i][1] = 5
+        @test x[i].refcount[] == 1
+    end
+    @test pa.refcount[] == 60
+    x = nothing
+    # try to force GC to check finalizer
+    GC.gc(); GC.gc(); GC.gc(); GC.gc()
+    if pa.refcount[] != 1
+        @warn "finalizer of PooledArray not triggered; excess refs: $(pa.refcount[] - 1)"
+    end
+end
+
+@testset "copyto! tests" begin
+    pa1 = PooledArray([1, 2, 3])
+    pa2 = similar(pa1, 4)
+    @test_throws BoundsError copyto!(pa1, pa2)
+    copyto!(pa2, pa1)
+    @test refpool(pa2) === refpool(pa1)
+    @test invrefpool(pa2) === invrefpool(pa1)
+    @test refcount(pa2) === refcount(pa1)
+    @test refcount(pa2)[] == 2
+
+    pa1 = view(PooledArray([1, 2, 3]), :)
+    pa2 = similar(pa1, 4)
+    @test_throws BoundsError copyto!(pa1, pa2)
+    copyto!(pa2, pa1)
+    @test refpool(pa2) === refpool(pa1)
+    @test invrefpool(pa2) === invrefpool(pa1)
+    @test refcount(pa2) === refcount(pa1)
+    @test refcount(pa2)[] == 2
+
+    pa1 = PooledArray([1, 2, 3])
+    pa2 = view(similar(pa1, 4), :)
+    @test_throws BoundsError copyto!(pa1, pa2)
+    copyto!(pa2, pa1)
+    @test refpool(pa2) === refpool(pa1)
+    @test invrefpool(pa2) === invrefpool(pa1)
+    @test refcount(pa2) === refcount(pa1)
+    @test refcount(pa2)[] == 2
+
+    pa1 = view(PooledArray([1, 2, 3]), :)
+    pa2 = view(similar(pa1, 4), :)
+    @test_throws BoundsError copyto!(pa1, pa2)
+    copyto!(pa2, pa1)
+    @test refpool(pa2) === refpool(pa1)
+    @test invrefpool(pa2) === invrefpool(pa1)
+    @test refcount(pa2) === refcount(pa1)
+    @test refcount(pa2)[] == 2
+
+    pa1 = PooledArray([1, 2, 3])
+    pa2 = similar(pa1, 4)
+    copyto!(pa2, 1, view(pa1, [1, 1]), 1, 2)
+    @test refpool(pa2) === refpool(pa1)
+    @test invrefpool(pa2) === invrefpool(pa1)
+    @test refcount(pa2) === refcount(pa1)
+    @test refcount(pa2)[] == 2
+    copyto!(pa2, 3, view(pa1, [1, 1]), 1, 2)
+    @test refpool(pa2) === refpool(pa1)
+    @test invrefpool(pa2) === invrefpool(pa1)
+    @test refcount(pa2) === refcount(pa1)
+    @test refcount(pa2)[] == 2
+    @test pa2 == [1, 1, 1, 1]
+
+    pa1 = PooledArray([1, 2, 3])
+    pa2 = similar(pa1, Float64, 3)
+    copyto!(pa2, 1, pa1, 1, 3)
+    @test refpool(pa2) !== refpool(pa1)
+    @test invrefpool(pa2) !== invrefpool(pa1)
+    @test refcount(pa2) !== refcount(pa1)
+    @test refcount(pa1)[] == 1
+    @test refcount(pa2)[] == 1
+    @test pa2 == [1, 2, 3]
+
+    pa1 = PooledArray([1, 2, 3])
+    pa2 = similar(pa1, 3)
+    pa2 .= 1
+    copyto!(pa2, 1, pa1, 1, 3)
+    @test refpool(pa2) !== refpool(pa1)
+    @test invrefpool(pa2) !== invrefpool(pa1)
+    @test refcount(pa2) !== refcount(pa1)
+    @test refcount(pa1)[] == 1
+    @test refcount(pa2)[] == 1
+    @test pa2 == [1, 2, 3]
+end
+
+@testset "reverse" begin
+    pa1 = PooledArray([1, 2, 3])
+    pa2 = reverse(pa1)
+    pa3 = reverse(pa2)
+    @test pa2 == [3, 2, 1]
+    @test pa3 == pa1
+    @test refpool(pa1) === refpool(pa2) === refpool(pa3)
+    @test invrefpool(pa1) === invrefpool(pa2) === invrefpool(pa3)
+    @test refcount(pa1) === refcount(pa2) === refcount(pa3)
+    @test refcount(pa1)[] == 3
+end
+
+@testset "convert" begin
+    pa1 = PooledArray([1, 2, 3])
+    @test convert(PooledArray, pa1) === pa1
+    @test eltype(convert(PooledArray{Float64}, pa1)) === Float64
+    pa1c = convert(PooledArray{Int, UInt64, 1}, pa1)
+    @test pa1c isa PooledArray{Int,UInt64,1,Array{UInt64,1}}
+    @test pa1c == pa1
+    @test !(pa1c isa typeof(pa1))
+end
+
+@testset "indexing" begin
+    pa = PooledArray([1 2; 3 4])
+    @test pa[2, 2, 1] == 4
+    @test pa[2, 2] == 4
+    @test pa[big(2), 2] == 4
+    pav = view(pa, :, :)
+    @test pav[2, 2, 1] == 4
+    @test pav[2, 2] == 4
+    @test pav[big(2), 2] == 4
+
+    @test refcount(pa)[] == 1
+    pa2 = pa[[true, false, false, true]]
+    @test pa2 == [1, 4]
+    @test refpool(pa) === refpool(pa2)
+    @test invrefpool(pa) === invrefpool(pa2)
+    @test refcount(pa) === refcount(pa2)
+    @test refcount(pa)[] == 2
+    pa3 = pav[[true, false, false, true]]
+    @test pa3 == [1, 4]
+    @test refpool(pa) === refpool(pa3)
+    @test invrefpool(pa) === invrefpool(pa3)
+    @test refcount(pa) === refcount(pa3)
+    @test refcount(pa)[] == 3
+
+    # these checks are mostly needed to check for dispatch ambiguities
+    @test pa[1] == 1
+    @test pa[1, 1] == 1
+    @test pa[1, 1, 1] == 1
+    @test pa[:] == [1, 3, 2, 4]
+    @test pa[1:4] == [1, 3, 2, 4]
+    @test pa[collect(1:4)] == [1, 3, 2, 4]
+    @test pa[1, 1:2] == [1, 2]
+    @test pa[1, [1, 2]] == [1, 2]
+    @test pa[1:1, 1:2] == [1 2]
+    @test pa[1:1, [1, 2]] == [1 2]
+    @test pa[[1], 1:2] == [1 2]
+    @test pa[[1], [1, 2]] == [1 2]
+    @test pav[1] == 1
+    @test pav[1, 1] == 1
+    @test pav[1, 1, 1] == 1
+    @test pav[:] == [1, 3, 2, 4]
+    @test pav[1:4] == [1, 3, 2, 4]
+    @test pav[collect(1:4)] == [1, 3, 2, 4]
+    @test pav[1, 1:2] == [1, 2]
+    @test pav[1, [1, 2]] == [1, 2]
+    @test pav[1:1, 1:2] == [1 2]
+    @test pav[1:1, [1, 2]] == [1 2]
+    @test pav[[1], 1:2] == [1 2]
+    @test pav[[1], [1, 2]] == [1 2]
+end
+
+@testset "isassigned" begin
+    pa1 = PooledArray(["a"])
+    pa2 = similar(pa1, 2)
+    pa2v = view(pa2, 1)
+    @test !isassigned(pa2, 1)
+    @test !isassigned(pa2v)
+end
+
+@testset "setindex!" begin
+    pa = PooledArray([1 2; 3 4])
+    pa[1, 1] = 10
+    @test pa == [10 2; 3 4]
+    @test [pa pa] == [10 2 10 2; 3 4 3 4]
+    pa[2] = 1000
+    @test pa == [10 2; 1000 4]
+    pa[1, :] = [11, 12]
+    @test pa == [11 12; 1000 4]
+    pa[1:2, 1:1] = [111, 222]
+    @test pa == [111 12; 222 4]
+    pa[1, 1, 1] = 0
+    @test pa == [0 12; 222 4]
+    pa[:] = [1 2; 3 4]
+    @test pa == [1 2; 3 4]
 end

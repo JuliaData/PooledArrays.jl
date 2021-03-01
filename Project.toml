@@ -1,9 +1,10 @@
 name = "PooledArrays"
 uuid = "2dfb63ee-cc39-5dd5-95bd-886bf059d720"
-version = "1.1.0"
+version = "1.2.0"
 
 [deps]
 DataAPI = "9a962f9c-6df0-11e9-0e5d-c546b8b5ee8a"
+Future = "9fa8497b-333b-5362-9e8d-4d0656e87820"
 
 [compat]
 DataAPI = "1.5"

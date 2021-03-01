@@ -1,6 +1,7 @@
 module PooledArrays
 
 import DataAPI
+import Future.copy!
 
 export PooledArray, PooledVector, PooledMatrix
 
@@ -24,26 +25,39 @@ function _invert(d::Dict{K,V}) where {K,V}
     for (k, v) in d
         d1[v] = k
     end
-    d1
+    return d1
 end
 
 mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
     refs::RA
     pool::Vector{T}
     invpool::Dict{T,R}
+    # refcount[] is 1 if only one PooledArray holds a reference to pool and invpool
+    refcount::Threads.Atomic{Int}
 
-    function PooledArray(rs::RefArray{RA},
-                         invpool::Dict{T, R},
-                         pool=_invert(invpool)) where {T,R,N,RA<:AbstractArray{R, N}}
+    function PooledArray{T,R,N,RA}(rs::RefArray{RA}, invpool::Dict{T, R},
+                                   pool::Vector{T}=_invert(invpool),
+                                   refcount::Threads.Atomic{Int}=Threads.Atomic{Int}(1)) where {T,R,N,RA<:AbstractArray{R, N}}
+        # this is a quick but incomplete consistency check
+        if length(pool) != length(invpool)
+            throw(ArgumentError("inconsistent pool and invpool"))
+        end
         # refs mustn't overflow pool
-        if length(rs.a) > 0 && maximum(rs.a) > length(invpool)
+        minref, maxref = extrema(rs.a)
+        # 0 indicates #undef
+        if length(rs.a) > 0 && (minref < 0 || maxref > length(invpool))
             throw(ArgumentError("Reference array points beyond the end of the pool"))
         end
-        new{T,R,N,RA}(rs.a,pool,invpool)
+        pa = new{T,R,N,RA}(rs.a, pool, invpool, refcount)
+        finalizer(x -> Threads.atomic_sub!(x.refcount, 1), pa)
+        return pa
     end
 end
 const PooledVector{T,R} = PooledArray{T,R,1}
 const PooledMatrix{T,R} = PooledArray{T,R,2}
+
+const PooledArrOrSub = Union{SubArray{T, N, <:PooledArray{T, R}},
+                             PooledArray{T, R, N}} where {T, N, R}
 
 ##############################################################################
 ##
@@ -60,11 +74,24 @@ const PooledMatrix{T,R} = PooledArray{T,R,2}
 ##############################################################################
 
 # Echo inner constructor as an outer constructor
-function PooledArray(refs::RefArray{R}, invpool::Dict{T,R}, pool=_invert(invpool)) where {T,R}
-    PooledArray{T,eltype(R),ndims(R),R}(refs, invpool, pool)
+PooledArray(refs::RefArray{RA}, invpool::Dict{T,R}, pool::Vector{T}=_invert(invpool),
+            refcount::Threads.Atomic{Int}=Threads.Atomic{Int}(1)) where {T,R,RA<:AbstractArray{R}} =
+    PooledArray{T,R,ndims(RA),RA}(refs, invpool, pool, refcount)
+
+# workaround https://github.com/JuliaLang/julia/pull/39809
+_our_copy(x) = copy(x)
+
+function _our_copy(x::SubArray{<:Any, 0})
+    y = similar(x)
+    y[] = x[]
+    return y
 end
 
-PooledArray(d::PooledArray) = copy(d)
+function PooledArray(d::PooledArrOrSub)
+    Threads.atomic_add!(refcount(d), 1)
+    return PooledArray(RefArray(_our_copy(DataAPI.refarray(d))),
+                       DataAPI.invrefpool(d), DataAPI.refpool(d), refcount(d))
+end
 
 function _label(xs::AbstractArray,
                 ::Type{T}=eltype(xs),
@@ -121,6 +148,15 @@ large enough to hold all unique values in `array`.
 
 Note that if you hold mutable objects in `PooledArray` it is not allowed to modify them
 after they are stored in it.
+
+In order to improve performance of `getindex` and `copyto!` operations `PooledArray`s
+may share pools. This sharing is automatically undone by copying a shared pool before
+adding new values to it.
+
+It is not safe to assign values that are not already present in a `PooledArray`'s pool
+from one thread while either reading or writing to the same array from another thread
+(even if pools are not shared). However, reading and writing from different threads is safe
+if all values already exist in the pool.
 """
 PooledArray
 
@@ -132,19 +168,18 @@ function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
     end
 
     # Assertions are needed since _label is not type stable
-    PooledArray(RefArray(refs::Vector{R}), invpool::Dict{T,R}, pool)
+    return PooledArray(RefArray(refs::Vector{R}), invpool::Dict{T,R}, pool)
 end
 
 function PooledArray{T}(d::AbstractArray; signed::Bool=false, compress::Bool=false) where {T}
     R = signed ? (compress ? Int8 : DEFAULT_SIGNED_REF_TYPE) : (compress ? UInt8 : DEFAULT_POOLED_REF_TYPE)
     refs, invpool, pool = _label(d, T, R)
-    PooledArray(RefArray(refs), invpool, pool)
+    return PooledArray(RefArray(refs), invpool, pool)
 end
 
 PooledArray(d::AbstractArray{T}, r::Type) where {T} = PooledArray{T}(d, r)
-function PooledArray(d::AbstractArray{T}; signed::Bool=false, compress::Bool=false) where {T}
+PooledArray(d::AbstractArray{T}; signed::Bool=false, compress::Bool=false) where {T} =
     PooledArray{T}(d, signed=signed, compress=compress)
-end
 
 # Construct an empty PooledVector of a specific type
 PooledArray(t::Type) = PooledArray(Array(t,0))
@@ -160,36 +195,103 @@ DataAPI.refarray(pa::PooledArray) = pa.refs
 DataAPI.refvalue(pa::PooledArray, i::Integer) = pa.pool[i]
 DataAPI.refpool(pa::PooledArray) = pa.pool
 DataAPI.invrefpool(pa::PooledArray) = pa.invpool
+refcount(pa::PooledArray) = pa.refcount
+
+DataAPI.refarray(pav::SubArray{<:Any, <:Any, <:PooledArray}) = view(parent(pav).refs, pav.indices...)
+DataAPI.refvalue(pav::SubArray{<:Any, <:Any, <:PooledArray}, i::Integer) = parent(pav).pool[i]
+DataAPI.refpool(pav::SubArray{<:Any, <:Any, <:PooledArray}) = parent(pav).pool
+DataAPI.invrefpool(pav::SubArray{<:Any, <:Any, <:PooledArray}) = parent(pav).invpool
+refcount(pav::SubArray{<:Any, <:Any, <:PooledArray}) = parent(pav).refcount
 
 Base.size(pa::PooledArray) = size(pa.refs)
 Base.length(pa::PooledArray) = length(pa.refs)
 Base.lastindex(pa::PooledArray) = lastindex(pa.refs)
 
-Base.copy(pa::PooledArray) = PooledArray(RefArray(copy(pa.refs)), copy(pa.invpool))
-# TODO: Implement copy_to()
+Base.copy(pa::PooledArrOrSub) = PooledArray(pa)
+
+# here we do not allow dest to be SubArray as copy! is intended to replace whole arrays
+# slow path will be used for SubArray
+function copy!(dest::PooledArray{T, R, N},
+               src::PooledArrOrSub{T, N, R}) where {T, N, R}
+    copy!(dest.refs, DataAPI.refarray(src))
+    src_refcount = refcount(src)
+
+    if dest.pool !== DataAPI.refpool(src)
+        Threads.atomic_sub!(dest.refcount, 1)
+        Threads.atomic_add!(src_refcount, 1)
+        dest.pool = DataAPI.refpool(src)
+        dest.invpool = DataAPI.invrefpool(src)
+        dest.refcount = src_refcount
+    else
+        @assert dest.invpool === DataAPI.invrefpool(src)
+        @assert dest.refcount === src_refcount
+    end
+    return dest
+end
+
+# this is needed as Julia Base uses a special path for this case we want to avoid
+Base.copyto!(dest::PooledArrOrSub{T, N, R}, src::PooledArrOrSub{T, N, R}) where {T, N, R} =
+    copyto!(dest, 1, src, 1, length(src))
+
+function Base.copyto!(dest::PooledArrOrSub{T, N, R}, doffs::Union{Signed, Unsigned},
+                      src::PooledArrOrSub{T, N, R}, soffs::Union{Signed, Unsigned},
+                      n::Union{Signed, Unsigned}) where {T, N, R}
+    n == 0 && return dest
+    n > 0 || Base._throw_argerror()
+    if soffs < 1 || doffs < 1 || soffs + n - 1 > length(src) || doffs + n - 1 > length(dest)
+        throw(BoundsError())
+    end
+
+    dest_pa = dest isa PooledArray ? dest : parent(dest)
+    src_refcount = refcount(src)
+
+    # if dest_pa.pool is empty we can safely replace it as we are sure it holds
+    # no information; having this path is useful because then we can efficiently
+    # `copyto!` into a fresh `PooledArray` created using the `similar` function
+    if DataAPI.refpool(dest) === DataAPI.refpool(src)
+        @assert DataAPI.invrefpool(dest) === DataAPI.invrefpool(src)
+        @assert refcount(dest) === refcount(src)
+        copyto!(DataAPI.refarray(dest), doffs, DataAPI.refarray(src), soffs, n)
+    elseif length(dest_pa.pool) == 0
+        @assert length(dest_pa.invpool) == 0
+        Threads.atomic_add!(src_refcount, 1)
+        dest_pa.pool = DataAPI.refpool(src)
+        dest_pa.invpool = DataAPI.invrefpool(src)
+        Threads.atomic_sub!(dest_pa.refcount, 1)
+        dest_pa.refcount = src_refcount
+        copyto!(DataAPI.refarray(dest), doffs, DataAPI.refarray(src), soffs, n)
+    else
+        @inbounds for i in 0:n-1
+            dest[doffs+i] = src[soffs+i]
+        end
+    end
+    return dest
+end
 
 function Base.resize!(pa::PooledArray{T,R,1}, n::Integer) where {T,R}
     oldn = length(pa.refs)
     resize!(pa.refs, n)
     pa.refs[oldn+1:n] .= zero(R)
-    pa
+    return pa
 end
 
-Base.reverse(x::PooledArray) = PooledArray(RefArray(reverse(x.refs)), x.invpool)
+function Base.reverse(x::PooledArray)
+    Threads.atomic_add!(x.refcount, 1)
+    PooledArray(RefArray(reverse(x.refs)), x.invpool, x.pool, x.refcount)
+end
 
 function Base.permute!!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
     Base.permute!!(x.refs, p)
-    x
+    return x
 end
 
 function Base.invpermute!!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
     Base.invpermute!!(x.refs, p)
-    x
+    return x
 end
 
-function Base.similar(pa::PooledArray{T,R}, S::Type, dims::Dims) where {T,R}
+Base.similar(pa::PooledArray{T,R}, S::Type, dims::Dims) where {T,R} =
     PooledArray(RefArray(zeros(R, dims)), Dict{S,R}())
-end
 
 Base.findall(pdv::PooledVector{Bool}) = findall(convert(Vector{Bool}, pdv))
 
@@ -224,7 +326,7 @@ function Base.map(f, x::PooledArray{T,R}) where {T,R<:Integer}
         newinvpool = Dict(zip(map(f, ks), vs))
         refarray = copy(x.refs)
     end
-    PooledArray(RefArray(refarray), newinvpool)
+    return PooledArray(RefArray(refarray), newinvpool)
 end
 
 ##############################################################################
@@ -288,10 +390,20 @@ Base.sort(pa::PooledArray; kw...) = pa[sortperm(pa; kw...)]
 ##
 ##############################################################################
 
-Base.convert(::Type{PooledArray{S,R1,N}}, pa::PooledArray{T,R2,N}) where {S,T,R1<:Integer,R2<:Integer,N} =
-    PooledArray(RefArray(convert(Array{R1,N}, pa.refs)), convert(Dict{S,R1}, pa.invpool))
-Base.convert(::Type{PooledArray{S,R,N}}, pa::PooledArray{T,R,N}) where {S,T,R<:Integer,N} =
-    PooledArray(RefArray(copy(pa.refs)), convert(Dict{S,R}, pa.invpool))
+function Base.convert(::Type{PooledArray{S,R1,N}}, pa::PooledArray{T,R2,N}) where {S,T,R1<:Integer,R2<:Integer,N}
+    invpool_conv = convert(Dict{S,R1}, pa.invpool)
+    @assert invpool_conv !== pa.invpool
+
+    if R1 === R2
+        refs_conv = pa.refs
+    else
+        refs_conv = convert(Array{R1,N}, pa.refs)
+        @assert refs_conv !== pa.refs
+    end
+
+    return PooledArray(RefArray(refs_conv), invpool_conv)
+end
+
 Base.convert(::Type{PooledArray{T,R,N}}, pa::PooledArray{T,R,N}) where {T,R<:Integer,N} = pa
 Base.convert(::Type{PooledArray{S,R1}}, pa::PooledArray{T,R2,N}) where {S,T,R1<:Integer,R2<:Integer,N} =
     convert(PooledArray{S,R1,N}, pa)
@@ -330,27 +442,45 @@ Base.convert(::Type{Array}, pa::PooledArray{T, R, N}) where {T, R, N} = convert(
 ##
 ##############################################################################
 
-# Scalar case
-Base.@propagate_inbounds function Base.getindex(pa::PooledArray, I::Integer...)
-    idx = pa.refs[I...]
+# We need separate functions due to dispatch ambiguities
+
+for T in (PooledArray, SubArray{<:Any, <:Any, <:PooledArray})
+    @eval Base.@propagate_inbounds function Base.getindex(A::$T, I::Integer...)
+        idx = DataAPI.refarray(A)[I...]
+        iszero(idx) && throw(UndefRefError())
+        return @inbounds DataAPI.refpool(A)[idx]
+    end
+
+    @eval Base.@propagate_inbounds function Base.getindex(A::$T, I::Union{Real, AbstractVector}...)
+        # make sure we do not increase A.refcount in case creation of newrefs fails
+        newrefs = DataAPI.refarray(A)[I...]
+        @assert newrefs isa AbstractArray
+        Threads.atomic_add!(refcount(A), 1)
+        return PooledArray(RefArray(newrefs), DataAPI.invrefpool(A), DataAPI.refpool(A), refcount(A))
+    end
+end
+
+if VERSION < v"1.1"
+    Base.@propagate_inbounds function Base.getindex(A::SubArray{T,D,P,I,true} ,
+                                                    i::Int) where {I<:Tuple{Union{Base.Slice,
+                                                                                  AbstractUnitRange},
+                                                                            Vararg{Any}}, P<:PooledArray, T, D}
+        idx = DataAPI.refarray(A)[i]
+        iszero(idx) && throw(UndefRefError())
+        return @inbounds DataAPI.refpool(A)[idx]
+    end
+end
+
+# Defined to avoid ambiguities with Base
+Base.@propagate_inbounds function Base.getindex(A::SubArray{<:Any, N, <:PooledArray}, I::Vararg{Int,N}) where {T,N}
+    idx = DataAPI.refarray(A)[I...]
     iszero(idx) && throw(UndefRefError())
-    return @inbounds pa.pool[idx]
+    return @inbounds DataAPI.refpool(A)[idx]
 end
 
-Base.@propagate_inbounds function Base.isassigned(pa::PooledArray, I::Int...)
-    !iszero(pa.refs[I...])
+Base.@propagate_inbounds function Base.isassigned(pa::PooledArrOrSub, I::Int...)
+    !iszero(DataAPI.refarray(pa)[I...])
 end
-
-# Vector case
-Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::Union{Real,AbstractVector}...)
-    PooledArray(RefArray(getindex(A.refs, I...)), copy(A.invpool))
-end
-
-# Dispatch our implementation for these cases instead of Base
-Base.@propagate_inbounds Base.getindex(A::PooledArray, I::AbstractVector) =
-    PooledArray(RefArray(getindex(A.refs, I)), copy(A.invpool))
-Base.@propagate_inbounds Base.getindex(A::PooledArray, I::AbstractArray) =
-    PooledArray(RefArray(getindex(A.refs, I)), copy(A.invpool))
 
 ##############################################################################
 ##
@@ -368,7 +498,8 @@ function getpoolidx(pa::PooledArray{T,R}, val::Any) where {T,R}
 end
 
 function unsafe_pool_push!(pa::PooledArray{T,R}, val) where {T,R}
-    _pool_idx = length(pa.pool)+1
+    # Warning - unsafe_pool_push! may not be used in any multithreaded context
+    _pool_idx = length(pa.pool) + 1
     if _pool_idx > typemax(R)
         throw(ErrorException(string(
             "You're using a PooledArray with ref type $R, which can only hold $(Int(typemax(R))) values,\n",
@@ -377,12 +508,22 @@ function unsafe_pool_push!(pa::PooledArray{T,R}, val) where {T,R}
            )))
     end
     pool_idx = convert(R, _pool_idx)
+    if pa.refcount[] > 1
+        pa.invpool = copy(pa.invpool)
+        pa.pool = copy(pa.pool)
+        Threads.atomic_sub!(pa.refcount, 1)
+        pa.refcount = Threads.Atomic{Int}(1)
+    end
     pa.invpool[val] = pool_idx
     push!(pa.pool, val)
     pool_idx
 end
 
-Base.@propagate_inbounds function Base.setindex!(x::PooledArray, val, ind::Integer)
+# assume PooledArray is only used with Arrays as this is what _label does
+# this simplifies code below
+Base.IndexStyle(::Type{<:PooledArray}) = IndexLinear()
+
+Base.@propagate_inbounds function Base.setindex!(x::PooledArray, val, ind::Int)
     x.refs[ind] = getpoolidx(x, val)
     return x
 end
@@ -420,20 +561,19 @@ Base.empty!(pv::PooledVector) = (empty!(pv.refs); pv)
 
 Base.deleteat!(pv::PooledVector, inds) = (deleteat!(pv.refs, inds); pv)
 
-function _vcat!(c,a,b)
+function _vcat!(c, a, b)
     copyto!(c, 1, a, 1, length(a))
-    copyto!(c, length(a)+1, b, 1, length(b))
+    return copyto!(c, length(a)+1, b, 1, length(b))
 end
-
 
 function Base.vcat(a::PooledArray{<:Any, <:Integer, 1}, b::AbstractArray{<:Any, 1})
     output = similar(b, promote_type(eltype(a), eltype(b)), length(b) + length(a))
-    _vcat!(output, a, b)
+    return _vcat!(output, a, b)
 end
 
 function Base.vcat(a::AbstractArray{<:Any, 1}, b::PooledArray{<:Any, <:Integer, 1})
     output = similar(a, promote_type(eltype(a), eltype(b)), length(b) + length(a))
-    _vcat!(output, a, b)
+    return _vcat!(output, a, b)
 end
 
 function Base.vcat(a::PooledArray{T, <:Integer, 1}, b::PooledArray{S, <:Integer, 1}) where {T, S}
