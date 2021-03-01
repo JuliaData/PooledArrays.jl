@@ -11,6 +11,8 @@ else
 end
 
 @testset "PooledArrays" begin
+    @test eltype(PooledArray(Int[])) === Int
+
     a = rand(10)
     b = rand(10,10)
     c = rand(1:10, 1000)
@@ -426,6 +428,13 @@ end
     @test pav[1:1, [1, 2]] == [1 2]
     @test pav[[1], 1:2] == [1 2]
     @test pav[[1], [1, 2]] == [1 2]
+
+    pav2 = view(PooledArray([1]), 1)
+    pa2 = similar(pav2)
+    pa2[] = 10
+
+    @test pav2[] == 1
+    @test pa2[] == 10
 end
 
 @testset "isassigned" begin

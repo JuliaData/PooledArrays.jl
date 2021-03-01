@@ -42,11 +42,13 @@ mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
         if length(pool) != length(invpool)
             throw(ArgumentError("inconsistent pool and invpool"))
         end
-        # refs mustn't overflow pool
-        minref, maxref = extrema(rs.a)
-        # 0 indicates #undef
-        if length(rs.a) > 0 && (minref < 0 || maxref > length(invpool))
-            throw(ArgumentError("Reference array points beyond the end of the pool"))
+        if length(rs.a) > 0
+            # 0 indicates #undef
+            # refs mustn't overflow pool
+            minref, maxref = extrema(rs.a)
+            if (minref < 0 || maxref > length(invpool))
+                throw(ArgumentError("Reference array points beyond the end of the pool"))
+            end
         end
         pa = new{T,R,N,RA}(rs.a, pool, invpool, refcount)
         finalizer(x -> Threads.atomic_sub!(x.refcount, 1), pa)
@@ -444,38 +446,23 @@ Base.convert(::Type{Array}, pa::PooledArray{T, R, N}) where {T, R, N} = convert(
 
 # We need separate functions due to dispatch ambiguities
 
-for T in (PooledArray, SubArray{<:Any, <:Any, <:PooledArray})
-    @eval Base.@propagate_inbounds function Base.getindex(A::$T, I::Integer...)
-        idx = DataAPI.refarray(A)[I...]
-        iszero(idx) && throw(UndefRefError())
-        return @inbounds DataAPI.refpool(A)[idx]
-    end
-
-    @eval Base.@propagate_inbounds function Base.getindex(A::$T, I::Union{Real, AbstractVector}...)
-        # make sure we do not increase A.refcount in case creation of newrefs fails
-        newrefs = DataAPI.refarray(A)[I...]
-        @assert newrefs isa AbstractArray
-        Threads.atomic_add!(refcount(A), 1)
-        return PooledArray(RefArray(newrefs), DataAPI.invrefpool(A), DataAPI.refpool(A), refcount(A))
-    end
-end
-
-if VERSION < v"1.1"
-    Base.@propagate_inbounds function Base.getindex(A::SubArray{T,D,P,I,true} ,
-                                                    i::Int) where {I<:Tuple{Union{Base.Slice,
-                                                                                  AbstractUnitRange},
-                                                                            Vararg{Any}}, P<:PooledArray, T, D}
-        idx = DataAPI.refarray(A)[i]
-        iszero(idx) && throw(UndefRefError())
-        return @inbounds DataAPI.refpool(A)[idx]
-    end
-end
-
-# Defined to avoid ambiguities with Base
-Base.@propagate_inbounds function Base.getindex(A::SubArray{<:Any, N, <:PooledArray}, I::Vararg{Int,N}) where {T,N}
-    idx = DataAPI.refarray(A)[I...]
+Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::Int)
+    idx = DataAPI.refarray(A)[I]
     iszero(idx) && throw(UndefRefError())
     return @inbounds DataAPI.refpool(A)[idx]
+end
+
+# we handle fast only the case when the first index is an abstract vector
+# this is to make sure other indexing synraxes use standard dispatch from Base
+# the reason is that creation of DataAPI.refarray(A) is unfortunately slow
+Base.@propagate_inbounds function Base.getindex(A::PooledArrOrSub,
+                                                I1::AbstractVector,
+                                                I2::Union{Real, AbstractVector}...)
+    # make sure we do not increase A.refcount in case creation of newrefs fails
+    newrefs = DataAPI.refarray(A)[I1, I2...]
+    @assert newrefs isa AbstractArray
+    Threads.atomic_add!(refcount(A), 1)
+    return PooledArray(RefArray(newrefs), DataAPI.invrefpool(A), DataAPI.refpool(A), refcount(A))
 end
 
 Base.@propagate_inbounds function Base.isassigned(pa::PooledArrOrSub, I::Int...)
