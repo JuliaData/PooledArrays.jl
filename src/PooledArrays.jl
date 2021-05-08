@@ -601,4 +601,7 @@ _perm(o::F, z::V) where {F, V} = Base.Order.Perm{F, V}(o, z)
 
 Base.Order.Perm(o::Base.Order.ForwardOrdering, y::PooledArray) = _perm(o, fast_sortable(y))
 
+Base.repeat(x::PooledArray, counts...) = PooledArray(RefArray(repeat(x.refs, counts...)), copy(x.invpool))
+Base.repeat(x::PooledArray; inner = nothing, outer = nothing) = PooledArray(RefArray(repeat(x.refs; inner = inner, outer = outer)), copy(x.invpool))
+
 end
