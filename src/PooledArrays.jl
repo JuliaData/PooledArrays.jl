@@ -601,11 +601,11 @@ _perm(o::F, z::V) where {F, V} = Base.Order.Perm{F, V}(o, z)
 
 Base.Order.Perm(o::Base.Order.ForwardOrdering, y::PooledArray) = _perm(o, fast_sortable(y))
 
-function Base.repeat(x::PooledArray{T, R, N, RA}, counts...) where {T, R<:Integer, N, RA}
+function Base.repeat(x::PooledArray, m::Integer...) 
     Threads.atomic_add!(x.refcount, 1)
-    PooledArray(RefArray(repeat(x.refs, counts...)), x.invpool, x.pool, x.refcount)
+    PooledArray(RefArray(repeat(x.refs, m...)), x.invpool, x.pool, x.refcount)
 end
-function Base.repeat(x::PooledArray{T, R, N, RA}; inner = nothing, outer = nothing) where {T, R<:Integer, N, RA}
+function Base.repeat(x::PooledArray; inner = nothing, outer = nothing)
     Threads.atomic_add!(x.refcount, 1)
     PooledArray(RefArray(repeat(x.refs; inner = inner, outer = outer)), 
                                 x.invpool, x.pool, x.refcount)
