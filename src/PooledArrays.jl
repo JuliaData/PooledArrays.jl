@@ -605,6 +605,7 @@ function Base.repeat(x::PooledArray, m::Integer...)
     Threads.atomic_add!(x.refcount, 1)
     PooledArray(RefArray(repeat(x.refs, m...)), x.invpool, x.pool, x.refcount)
 end
+
 function Base.repeat(x::PooledArray; inner = nothing, outer = nothing)
     Threads.atomic_add!(x.refcount, 1)
     PooledArray(RefArray(repeat(x.refs; inner = inner, outer = outer)), 
