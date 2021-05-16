@@ -475,10 +475,6 @@ end
     @test refcount(pa1) === refcount(pa2) === refcount(pa3) === refcount(pa4)
     @test refcount(pa1)[] == 4
 
-    pa1 = PooledArray(["one", "two"])
-    # check it didn't mess the other pa
-    @test pa3 == [1, 2, 3, 1, 2, 3]
-
     pa2 = repeat(pa1, outer = 3)
     pa3 = repeat(pa1, inner = 3, outer = 2)
     @test pa2 == ["one", "two", "one", "two", "one", "two"]
