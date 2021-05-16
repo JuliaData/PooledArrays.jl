@@ -492,7 +492,7 @@ end
     @test isequal(pa2, ["one", missing, "two", "one", missing, "two"])
     @test isequal(pa2.pool, ["one", missing, "two"])
     @test size(pa3) == (0,)
-    @test pa3.refs == UInt32[]
+    @test isempty(pa3.refs)
 
     # two dimensional
     pa1 = PooledArray([true false; false true; true true])
