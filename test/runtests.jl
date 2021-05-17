@@ -461,3 +461,42 @@ end
     pa[:] = [1 2; 3 4]
     @test pa == [1 2; 3 4]
 end
+
+@testset "repeat" begin
+    pa1 = PooledArray([1, 2, 3])
+    pa2 = repeat(pa1)
+    pa3 = repeat(pa1, 2)
+    pa4 = repeat(pa1, inner = 2)
+    @test pa2 == pa1
+    @test pa3 == [1, 2, 3, 1, 2, 3]
+    @test pa4 == [1, 1, 2, 2, 3, 3]
+    @test refpool(pa1) === refpool(pa2) === refpool(pa3) === refpool(pa4)
+    @test invrefpool(pa1) === invrefpool(pa2) === invrefpool(pa3) === invrefpool(pa4)
+    @test refcount(pa1) === refcount(pa2) === refcount(pa3) === refcount(pa4)
+    @test refcount(pa1)[] == 4
+
+    pa1 = PooledArray(["one", "two"])
+    pa2 = repeat(pa1, outer = 3)
+    pa3 = repeat(pa1, inner = 3, outer = 2)
+    @test pa2 == ["one", "two", "one", "two", "one", "two"]
+    @test pa3 == ["one", "one", "one", "two", "two", "two", "one", "one", "one", "two", "two", "two"]
+
+    # missing shouldn't be a problem
+
+    pa1 = PooledArray(["one", missing, "two"])
+    pa2 = repeat(pa1, 2)
+    pa3 = repeat(pa1, 0)
+    @test isequal(pa2, ["one", missing, "two", "one", missing, "two"])
+    @test isequal(pa2.pool, ["one", missing, "two"])
+    @test size(pa3) == (0,)
+    @test isempty(pa3.refs)
+
+    # two dimensional
+    pa1 = PooledArray([true false; false true; true true])
+    pa2 = repeat(pa1, 2)
+    @test pa2 == Bool[1 0; 0 1; 1 1; 1 0; 0 1; 1 1]
+
+    pa1 = PooledArray([1 2; 3 4])
+    pa2 = repeat(pa1, inner = (2, 1))
+    @test pa2 == [1 2; 1 2; 3 4; 3 4]
+end
