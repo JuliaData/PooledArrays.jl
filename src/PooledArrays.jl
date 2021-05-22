@@ -51,7 +51,7 @@ mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
                 if (v < 0 || v > ipl)
                     throw(ArgumentError("Reference array points beyond the end of the pool"))
                 end
-                if !(T <: Missing)
+                if !(T >: Missing)
                     if v == 1
                         throw(ArgumentError("Missing value in a pool that does not allow it"))
                     end
@@ -101,9 +101,9 @@ function _our_copy(x::SubArray{<:Any, 0})
     return y
 end
 
-function PooledArray(d::PooledArrOrSub)
+function PooledArray(d::PooledArrOrSub{T}) where {T}
     Threads.atomic_add!(refcount(d), 1)
-    return PooledArray(RefArray(_our_copy(DataAPI.refarray(d))),
+    return PooledArray{T}(RefArray(_our_copy(DataAPI.refarray(d))),
                        DataAPI.invrefpool(d), DataAPI.refpool(d), refcount(d))
 end
 
@@ -469,26 +469,26 @@ Base.convert(::Type{Array}, pa::PooledArray{T, R, N}) where {T, R, N} = convert(
 Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::Int)
     idx = DataAPI.refarray(A)[I]
     # if eltype(A) does not allow Missing then also 1 is an error
-    idx <= !(eltype(A) <: Missing) && throw(UndefRefError())
+    idx <= !(eltype(A) >: Missing) && throw(UndefRefError())
     return @inbounds DataAPI.refpool(A)[idx]
 end
 
 # we handle fast only the case when the first index is an abstract vector
 # this is to make sure other indexing synraxes use standard dispatch from Base
 # the reason is that creation of DataAPI.refarray(A) is unfortunately slow
-Base.@propagate_inbounds function Base.getindex(A::PooledArrOrSub,
+Base.@propagate_inbounds function Base.getindex(A::PooledArrOrSub{T},
                                                 I1::AbstractVector,
-                                                I2::Union{Real, AbstractVector}...)
+                                                I2::Union{Real, AbstractVector}...) where {T}
     # make sure we do not increase A.refcount in case creation of newrefs fails
     newrefs = DataAPI.refarray(A)[I1, I2...]
     @assert newrefs isa AbstractArray
     Threads.atomic_add!(refcount(A), 1)
-    return PooledArray(RefArray(newrefs), DataAPI.invrefpool(A), DataAPI.refpool(A), refcount(A))
+    return PooledArray{T}(RefArray(newrefs), DataAPI.invrefpool(A), DataAPI.refpool(A), refcount(A))
 end
 
 Base.@propagate_inbounds function Base.isassigned(pa::PooledArrOrSub, I::Int...)
     # if eltype(A) does not allow Missing then also 1 is an error
-    !(DataAPI.refarray(pa)[I...] <= !(eltype(pa) <: Missing))
+    !(DataAPI.refarray(pa)[I...] <= !(eltype(pa) >: Missing))
 end
 
 ##############################################################################
@@ -533,7 +533,7 @@ end
 Base.IndexStyle(::Type{<:PooledArray}) = IndexLinear()
 
 Base.@propagate_inbounds function Base.setindex!(x::PooledArray, val, ind::Int)
-    if val === missing && !(eltype(x) <: Missing)
+    if val === missing && !(eltype(x) >: Missing)
         throw(ArgumentError("PooledArray element type does not allow storing missing values"))
     end
     x.refs[ind] = getpoolidx(x, val)
