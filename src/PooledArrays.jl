@@ -45,7 +45,7 @@ mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
         if length(rs.a) > 0
             # 0 indicates #undef
             # refs mustn't overflow pool
-            
+
             ipl = length(invpool)
             for v in rs.a
                 if (v < 0 || v > ipl)
@@ -112,9 +112,9 @@ function _label(xs::AbstractArray,
                 ::Type{I}=DEFAULT_POOLED_REF_TYPE,
                 start = 1,
                 labels = Array{I}(undef, size(xs)),
-                invpool::Dict{Union{Missing,T},I} = Dict{Union{Missing,T}, I}(),
-                pool::Vector{Union{Missing,T}} = Union{Missing,T}[],
-                nlabels = 0,
+                invpool::Dict{Union{Missing,T},I} = Dict{Union{Missing,T}, I}(missing => one(I)),
+                pool::Vector{Union{Missing,T}} = Union{Missing,T}[missing],
+                nlabels = 1,
                ) where {T, I<:Integer}
 
     @inbounds for i in start:length(xs)
@@ -188,7 +188,7 @@ end
 function PooledArray{T}(d::AbstractArray; signed::Bool=false, compress::Bool=false) where {T}
     R = signed ? (compress ? Int8 : DEFAULT_SIGNED_REF_TYPE) : (compress ? UInt8 : DEFAULT_POOLED_REF_TYPE)
     refs, invpool, pool = _label(d, T, R)
-    return PooledArray(RefArray(refs), invpool, pool)
+    return PooledArray{T}(RefArray(refs), invpool, pool)
 end
 
 PooledArray(d::AbstractArray{T}, r::Type) where {T} = PooledArray{T}(d, r)
@@ -291,9 +291,9 @@ function Base.resize!(pa::PooledArray{T,R,1}, n::Integer) where {T,R}
     return pa
 end
 
-function Base.reverse(x::PooledArray)
+function Base.reverse(x::PooledArray{T}) where {T}
     Threads.atomic_add!(x.refcount, 1)
-    PooledArray(RefArray(reverse(x.refs)), x.invpool, x.pool, x.refcount)
+    PooledArray{T}(RefArray(reverse(x.refs)), x.invpool, x.pool, x.refcount)
 end
 
 function Base.permute!!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
@@ -307,7 +307,7 @@ function Base.invpermute!!(x::PooledArray, p::AbstractVector{T}) where T<:Intege
 end
 
 Base.similar(pa::PooledArray{T,R}, S::Type, dims::Dims) where {T,R} =
-    PooledArray{S}(RefArray(zeros(R, dims)), Dict{Union{Missing,S},R}())
+    PooledArray{S}(RefArray(zeros(R, dims)), Dict{Union{Missing,S},R}(missing=>one(R)))
 
 Base.findall(pdv::PooledVector{Bool}) = findall(convert(Vector{Bool}, pdv))
 
@@ -466,7 +466,7 @@ Base.convert(::Type{Array}, pa::PooledArray{T, R, N}) where {T, R, N} = convert(
 
 # We need separate functions due to dispatch ambiguities
 
-Base.@propagate_inbounds function Base.getindex(A::PooledArray, I::Int)
+Base.@propagate_inbounds function Base.getindex(A::PooledArray{T}, I::Int)::T where T
     idx = DataAPI.refarray(A)[I]
     # if eltype(A) does not allow Missing then also 1 is an error
     idx <= !(eltype(A) >: Missing) && throw(UndefRefError())
