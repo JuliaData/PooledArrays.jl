@@ -325,7 +325,7 @@ function Base.map(f, x::PooledArray{T,R}) where {T,R<:Integer}
         end
         refarray = map(x->translate[x], x.refs)
     else
-        newinvpool = Dict(zip(map(f, ks), vs))
+        newinvpool = Dict(zip(ks1, vs))
         refarray = copy(x.refs)
     end
     return PooledArray(RefArray(refarray), newinvpool)
