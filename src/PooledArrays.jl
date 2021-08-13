@@ -358,8 +358,8 @@ function _map_notpure(f, xs::PooledArray,
                 push!(pool2, vi)
                 labels2 = convert(Vector{I2}, labels)
                 labels2[i] = nlabels
-                return _map_notpure(f, xs, invpool2, pool2,
-                                    labels2, i+1, nlabels)
+                return _map_notpure(f, xs, i+1, invpool2, pool2,
+                                    labels2, nlabels)
             end
             nlabels += 1
             labels[i] = nlabels
