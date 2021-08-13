@@ -316,7 +316,58 @@ in `x` is small.
 """
 function Base.map(f, x::PooledArray; pure::Bool=false)
     pure && return _map_pure(f, x)
-    return PooledArray(collect(Base.Generator(f, x)))
+    length(x) == 0 && return PooledArray(collect(Base.Generator(f, x)))
+    v1 = f(x[1])
+    T = typeof(v1)
+    invpool = Dict(v1 => one(eltype(x.refs)))
+    pool = [v1]
+    labels = similar(x.refs)
+    labels[1] = 1
+    nlabels = 1
+    return _map_notpure(f, x, 2, invpool, pool, labels, nlabels)
+end
+
+function _map_notpure(xs::PooledArray,
+                      start,
+                      invpool::Dict{T,I},
+                      pool::Vector{T},
+                      labels::Array{I},
+                      nlabels::Int) where {T, I<:Integer}
+    for i in start:length(xs)
+        vi = f(xs[i])
+        Ti = typeof(vi)
+        lbl = get(invpool, x, zero(I))
+        if lbl !== zero(I)
+            labels[i] = lbl
+        else
+            if nlabels == typemax(I) || !(Ti isa T)
+                if nlabels == typemax(I)
+                    I2 = _widen(I)
+                else
+                    I2 = I
+                end
+                if Ti isa T
+                    T2 = T
+                else
+                    T2 = typejoin(T, Ti)
+                end
+                nlabels += 1
+                invpool2 = convert(Dict{T2, I2}, invpool)
+                invpool2[vi] = nlabels
+                pool2 = convert(Vector{T2}, pool)
+                push!(pool2, vi)
+                labels2 = convert(Vector{I2}, labels)
+                labels2[i] = nlabels
+                return _map_notpure(xs, invpool2, pool2,
+                                    labels2, i+1, nlabels)
+            end
+            nlabels += 1
+            labels[i] = nlabels
+            invpool[vi] = nlabels
+            push!(pool, vi)
+        end
+    end
+    return PooledArray(RefArray(labels), invpool, pool)
 end
 
 function _map_pure(f, x::PooledArray)
