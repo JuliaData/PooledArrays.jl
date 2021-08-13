@@ -327,7 +327,7 @@ function Base.map(f, x::PooledArray; pure::Bool=false)
     return _map_notpure(f, x, 2, invpool, pool, labels, nlabels)
 end
 
-function _map_notpure(xs::PooledArray,
+function _map_notpure(f, xs::PooledArray,
                       start,
                       invpool::Dict{T,I},
                       pool::Vector{T},
@@ -358,7 +358,7 @@ function _map_notpure(xs::PooledArray,
                 push!(pool2, vi)
                 labels2 = convert(Vector{I2}, labels)
                 labels2[i] = nlabels
-                return _map_notpure(xs, invpool2, pool2,
+                return _map_notpure(f, xs, invpool2, pool2,
                                     labels2, i+1, nlabels)
             end
             nlabels += 1
