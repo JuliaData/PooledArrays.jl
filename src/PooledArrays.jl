@@ -336,7 +336,7 @@ function _map_notpure(f, xs::PooledArray,
     for i in start:length(xs)
         vi = f(xs[i])
         Ti = typeof(vi)
-        lbl = get(invpool, x, zero(I))
+        lbl = get(invpool, vi, zero(I))
         if lbl !== zero(I)
             labels[i] = lbl
         else
