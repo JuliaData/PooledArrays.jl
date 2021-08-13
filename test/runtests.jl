@@ -500,3 +500,29 @@ end
     pa2 = repeat(pa1, inner = (2, 1))
     @test pa2 == [1 2; 1 2; 3 4; 3 4]
 end
+
+@testset "map pure tests" begin
+    x = PooledArray([1, 2, 3])
+    x[3] = 1
+    y = map(-, x, pure=true)
+    @test refpool(y) = [-1, -2, -3]
+    @test y == [-1, -2, -1]
+
+    y = map(-, x)
+    @test refpool(y) = [-1, -2]
+    @test y == [-1, -2, -1]
+
+    function f()
+        i = Ref(0)
+        return x -> (i[] -= 1; i[])
+    end
+    
+    # the order is strange as we iterate invpool which is a Dict
+    y = map(f(), x, pure=true)
+    @test refpool(y) = [-3, -1, -2]
+    @test y == [-3, -1, -3]
+
+    y = map(f(), x)
+    @test refpool(y) = [-1, -2, -3]
+    @test y == [-1, -2, -3]
+end
