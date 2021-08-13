@@ -304,7 +304,22 @@ Base.findall(pdv::PooledVector{Bool}) = findall(convert(Vector{Bool}, pdv))
 ##
 ##############################################################################
 
-function Base.map(f, x::PooledArray{T,R}) where {T,R<:Integer}
+"""
+    map(f, x::PooledArray; pure:Bool=false)
+        
+Transform `PooledArray` `x` by applying `f` to each element.
+
+If `pure=true` then `f` is applied to each element of pool of `x`
+exactly once (even if some elements in pool are not present it `x`).
+
+If `pure=false` (the default) `f` is applied to each element of `x`.
+"""
+function Base.map(f, x::PooledArray; pure:Bool=false)
+    pure && return _map_pure(f, x)
+    return PooledArray(collect(Base.Generator(f, x)))
+end
+
+function _map_pure(f, x::PooledArray)
     ks = collect(keys(x.invpool))
     vs = collect(values(x.invpool))
     ks1 = map(f, ks)
