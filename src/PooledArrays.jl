@@ -305,7 +305,7 @@ Base.findall(pdv::PooledVector{Bool}) = findall(convert(Vector{Bool}, pdv))
 ##############################################################################
 
 """
-    map(f, x::PooledArray; pure:Bool=false)
+    map(f, x::PooledArray; pure::Bool=false)
         
 Transform `PooledArray` `x` by applying `f` to each element.
 
@@ -314,7 +314,7 @@ exactly once (even if some elements in pool are not present it `x`).
 
 If `pure=false` (the default) `f` is applied to each element of `x`.
 """
-function Base.map(f, x::PooledArray; pure:Bool=false)
+function Base.map(f, x::PooledArray; pure::Bool=false)
     pure && return _map_pure(f, x)
     return PooledArray(collect(Base.Generator(f, x)))
 end
