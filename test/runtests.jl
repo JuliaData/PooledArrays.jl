@@ -505,7 +505,7 @@ end
     x = PooledArray([1, 2, 3])
     x[3] = 1
     y = map(-, x, pure=true)
-    @test refpool(y) = [-1, -2, -3]
+    @test refpool(y) == [-1, -2, -3]
     @test y == [-1, -2, -1]
 
     y = map(-, x)
