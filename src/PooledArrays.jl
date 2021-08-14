@@ -306,7 +306,7 @@ Base.findall(pdv::PooledVector{Bool}) = findall(convert(Vector{Bool}, pdv))
 
 """
     map(f, x::PooledArray; pure::Bool=false)
-        
+
 Transform `PooledArray` `x` by applying `f` to each element.
 
 If `pure=true` then `f` is applied to each element of pool of `x`
@@ -339,7 +339,7 @@ function _map_notpure(f, xs::PooledArray, start,
         else
             if nlabels == typemax(I) || !(Ti isa T)
                 I2 = nlabels == typemax(I) ? _widen(I) : I
-                T2 = Ti isa T ? T : typejoin(T, Ti)
+                T2 = Ti isa T ? T : Base.promote_typejoin(T, Ti)
                 nlabels += 1
                 invpool2 = convert(Dict{T2, I2}, invpool)
                 invpool2[vi] = nlabels
@@ -656,14 +656,14 @@ _perm(o::F, z::V) where {F, V} = Base.Order.Perm{F, V}(o, z)
 
 Base.Order.Perm(o::Base.Order.ForwardOrdering, y::PooledArray) = _perm(o, fast_sortable(y))
 
-function Base.repeat(x::PooledArray, m::Integer...) 
+function Base.repeat(x::PooledArray, m::Integer...)
     Threads.atomic_add!(x.refcount, 1)
     PooledArray(RefArray(repeat(x.refs, m...)), x.invpool, x.pool, x.refcount)
 end
 
 function Base.repeat(x::PooledArray; inner = nothing, outer = nothing)
     Threads.atomic_add!(x.refcount, 1)
-    PooledArray(RefArray(repeat(x.refs; inner = inner, outer = outer)), 
+    PooledArray(RefArray(repeat(x.refs; inner = inner, outer = outer)),
                                 x.invpool, x.pool, x.refcount)
 end
 

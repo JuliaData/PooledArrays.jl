@@ -516,7 +516,7 @@ end
         i = Ref(0)
         return x -> (i[] -= 1; i[])
     end
-    
+
     # the order is strange as we iterate invpool which is a Dict
     # and it depends on the version of Julia
     y = map(f(), x, pure=true)
@@ -527,15 +527,17 @@ end
     y = map(f(), x)
     @test refpool(y) == [-1, -2, -3]
     @test y == [-1, -2, -3]
-    
+
     x = PooledArray([1, missing, 2])
     y = map(identity, x)
-    @test y == [1, missing, 2]
+    @test isequal(y, [1, missing, 2])
     @test typeof(y) === PooledVector{Union{Missing, Int}, UInt32, Vector{UInt32}}
+
     x = PooledArray([1, missing, 2], signed=true, compress=true)
     y = map(identity, x)
-    @test y == [1, missing, 2]
+    @test isequal(y, [1, missing, 2])
     @test typeof(y) === PooledVector{Union{Missing, Int}, Int8, Vector{Int8}}
+
     x = PooledArray(fill(1, 200), signed=true, compress=true)
     y = map(f(), x)
     @test y == -1:-1:-200
