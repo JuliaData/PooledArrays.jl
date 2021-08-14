@@ -337,7 +337,7 @@ function _map_notpure(f, xs::PooledArray, start,
         if lbl !== zero(I)
             labels[i] = lbl
         else
-            if nlabels == typemax(I) || !(Ti isa T)
+            if nlabels == typemax(I) || !(Ti === T)
                 I2 = nlabels == typemax(I) ? _widen(I) : I
                 T2 = Ti isa T ? T : Base.promote_typejoin(T, Ti)
                 nlabels += 1
