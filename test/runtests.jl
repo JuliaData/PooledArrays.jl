@@ -518,9 +518,11 @@ end
     end
     
     # the order is strange as we iterate invpool which is a Dict
+    # and it depends on the version of Julia
     y = map(f(), x, pure=true)
-    @test refpool(y) == [-3, -1, -2]
-    @test y == [-3, -1, -3]
+    d = Dict(Set(1:3) .=> -1:-1:-3)
+    @test refpool(y) == [d[i] for i in 1:3]
+    @test y == [d[v] for v in x]
 
     y = map(f(), x)
     @test refpool(y) == [-1, -2, -3]
