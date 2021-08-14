@@ -316,9 +316,8 @@ in `x` is small.
 """
 function Base.map(f, x::PooledArray; pure::Bool=false)
     pure && return _map_pure(f, x)
-    length(x) == 0 && return PooledArray(collect(Base.Generator(f, x)))
+    length(x) == 0 && return PooledArray([f(v) for v in x])
     v1 = f(x[1])
-    T = typeof(v1)
     invpool = Dict(v1 => one(eltype(x.refs)))
     pool = [v1]
     labels = similar(x.refs)
@@ -334,10 +333,10 @@ function _map_notpure(f, xs::PooledArray, start,
         vi = f(xs[i])
         Ti = typeof(vi)
         lbl = get(invpool, vi, zero(I))
-        if lbl !== zero(I)
+        if lbl != zero(I)
             labels[i] = lbl
         else
-            if nlabels == typemax(I) || !(Ti === T)
+            if nlabels == typemax(I) || Ti !== T
                 I2 = nlabels == typemax(I) ? _widen(I) : I
                 T2 = Ti isa T ? T : Base.promote_typejoin(T, Ti)
                 nlabels += 1
