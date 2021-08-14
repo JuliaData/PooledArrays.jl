@@ -509,7 +509,7 @@ end
     @test y == [-1, -2, -1]
 
     y = map(-, x)
-    @test refpool(y) = [-1, -2]
+    @test refpool(y) == [-1, -2]
     @test y == [-1, -2, -1]
 
     function f()
