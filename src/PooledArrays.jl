@@ -139,6 +139,8 @@ _widen(::Type{Int32}) = Int64
 Freshly allocate `PooledArray` using the given array as a source where each
 element will be referenced as an integer of the given type.
 
+`PooledArray` constructor is not type stable.
+
 If `reftype` is not specified, Boolean keyword arguments `signed` and `compress`
 determine the type of integer references. By default (`signed=false`), unsigned integers
 are used, as they have a greater range.
