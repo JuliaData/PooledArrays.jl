@@ -527,4 +527,17 @@ end
     y = map(f(), x)
     @test refpool(y) == [-1, -2, -3]
     @test y == [-1, -2, -3]
+    
+    x = PooledArray([1, missing, 2])
+    y = map(identity, x)
+    @test y == [1, missing, 2]
+    @test typeof(y) === PooledVector{Union{Missing, Int}, UInt32, Vector{UInt32}}
+    x = PooledArray([1, missing, 2], signed=true, compress=true)
+    y = map(identity, x)
+    @test y == [1, missing, 2]
+    @test typeof(y) === PooledVector{Union{Missing, Int}, Int8, Vector{Int8}}
+    x = PooledArray(fill(1, 200), signed=true, compress=true)
+    y = map(f(), x)
+    @test y == -1:-1:-200
+    @test typeof(y) === PooledVector{Union{Missing, Int}, Int16, Vector{Int16}}
 end
