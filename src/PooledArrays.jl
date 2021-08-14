@@ -341,16 +341,8 @@ function _map_notpure(f, xs::PooledArray,
             labels[i] = lbl
         else
             if nlabels == typemax(I) || !(Ti isa T)
-                if nlabels == typemax(I)
-                    I2 = _widen(I)
-                else
-                    I2 = I
-                end
-                if Ti isa T
-                    T2 = T
-                else
-                    T2 = typejoin(T, Ti)
-                end
+                I2 = nlabels == typemax(I) ? _widen(I) : I
+                T2 = Ti isa T ? T : typejoin(T, Ti)
                 nlabels += 1
                 invpool2 = convert(Dict{T2, I2}, invpool)
                 invpool2[vi] = nlabels

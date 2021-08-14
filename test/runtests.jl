@@ -519,10 +519,10 @@ end
     
     # the order is strange as we iterate invpool which is a Dict
     y = map(f(), x, pure=true)
-    @test refpool(y) = [-3, -1, -2]
+    @test refpool(y) == [-3, -1, -2]
     @test y == [-3, -1, -3]
 
     y = map(f(), x)
-    @test refpool(y) = [-1, -2, -3]
+    @test refpool(y) == [-1, -2, -3]
     @test y == [-1, -2, -3]
 end
