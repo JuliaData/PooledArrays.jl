@@ -327,12 +327,9 @@ function Base.map(f, x::PooledArray; pure::Bool=false)
     return _map_notpure(f, x, 2, invpool, pool, labels, nlabels)
 end
 
-function _map_notpure(f, xs::PooledArray,
-                      start,
-                      invpool::Dict{T,I},
-                      pool::Vector{T},
-                      labels::Array{I},
-                      nlabels::Int) where {T, I<:Integer}
+function _map_notpure(f, xs::PooledArray, start,
+                      invpool::Dict{T,I}, pool::Vector{T},
+                      labels::Array{I}, nlabels::Int) where {T, I<:Integer}
     for i in start:length(xs)
         vi = f(xs[i])
         Ti = typeof(vi)
