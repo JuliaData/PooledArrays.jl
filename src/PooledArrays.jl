@@ -313,6 +313,8 @@ If `pure=true` then `f` is applied to each element of pool of `x`
 exactly once (even if some elements in pool are not present it `x`).
 This will typically be much faster when the proportion of unique values
 in `x` is small.
+
+If `pure=false` the return type of `map` is not type stable.
 """
 function Base.map(f, x::PooledArray; pure::Bool=false)
     pure && return _map_pure(f, x)
