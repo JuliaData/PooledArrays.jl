@@ -541,5 +541,5 @@ end
     x = PooledArray(fill(1, 200), signed=true, compress=true)
     y = map(f(), x)
     @test y == -1:-1:-200
-    @test typeof(y) === PooledVector{Int, Int16, Vector{Int16}}
+    @test typeof(y) === PooledVector{Int, Int64, Vector{Int64}}
 end

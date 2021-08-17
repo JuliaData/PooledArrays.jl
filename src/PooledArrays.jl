@@ -131,6 +131,7 @@ _widen(::Type{UInt32}) = UInt64
 _widen(::Type{Int8}) = Int16
 _widen(::Type{Int16}) = Int32
 _widen(::Type{Int32}) = Int64
+
 # Constructor from array, invpool, and ref type
 
 """
@@ -314,7 +315,8 @@ exactly once (even if some elements in pool are not present it `x`).
 This will typically be much faster when the proportion of unique values
 in `x` is small.
 """
-function Base.map(f, x::PooledArray; pure::Bool=false)
+function Base.map(f, x::PooledArray{To, R, N}; pure::Bool=false)::Union{PooledArray{<:Any, To, N, <:Array{To, N}},
+                                                                        PooledArray{<:Any, Int64, N, <:Array{Int64, N}}} where {To, R, N}
     pure && return _map_pure(f, x)
     length(x) == 0 && return PooledArray(collect(Base.Generator(f, x)))
     v1 = f(x[1])
@@ -338,7 +340,7 @@ function _map_notpure(f, xs::PooledArray, start,
             labels[i] = lbl
         else
             if nlabels == typemax(I) || !(Ti === T)
-                I2 = nlabels == typemax(I) ? _widen(I) : I
+                I2 = nlabels == typemax(I) ? Int64 : I
                 T2 = Ti isa T ? T : Base.promote_typejoin(T, Ti)
                 nlabels += 1
                 invpool2 = convert(Dict{T2, I2}, invpool)
