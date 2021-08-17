@@ -140,6 +140,8 @@ _widen(::Type{Int32}) = Int64
 Freshly allocate `PooledArray` using the given array as a source where each
 element will be referenced as an integer of the given type.
 
+`PooledArray` constructor is not type stable.
+
 If `reftype` is not specified, Boolean keyword arguments `signed` and `compress`
 determine the type of integer references. By default (`signed=false`), unsigned integers
 are used, as they have a greater range.
@@ -314,13 +316,14 @@ If `pure=true` then `f` is applied to each element of pool of `x`
 exactly once (even if some elements in pool are not present it `x`).
 This will typically be much faster when the proportion of unique values
 in `x` is small.
+
+If `pure=false` the value returned by `map` is not type stable.
 """
 function Base.map(f, x::PooledArray{To, R, N}; pure::Bool=false)::Union{PooledArray{<:Any, To, N, <:Array{To, N}},
                                                                         PooledArray{<:Any, Int64, N, <:Array{Int64, N}}} where {To, R, N}
     pure && return _map_pure(f, x)
-    length(x) == 0 && return PooledArray(collect(Base.Generator(f, x)))
+    length(x) == 0 && return PooledArray([f(v) for v in x])
     v1 = f(x[1])
-    T = typeof(v1)
     invpool = Dict(v1 => one(eltype(x.refs)))
     pool = [v1]
     labels = similar(x.refs)
@@ -336,10 +339,10 @@ function _map_notpure(f, xs::PooledArray, start,
         vi = f(xs[i])
         Ti = typeof(vi)
         lbl = get(invpool, vi, zero(I))
-        if lbl !== zero(I)
+        if lbl != zero(I)
             labels[i] = lbl
         else
-            if nlabels == typemax(I) || !(Ti === T)
+            if nlabels == typemax(I) || Ti !== T
                 I2 = nlabels == typemax(I) ? Int64 : I
                 T2 = Ti isa T ? T : Base.promote_typejoin(T, Ti)
                 nlabels += 1
