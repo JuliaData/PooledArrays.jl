@@ -347,7 +347,7 @@ function _map_notpure(f, xs::PooledArray, start,
                 nlabels += 1
                 invpool2 = convert(Dict{T2, I2}, invpool)
                 invpool2[vi] = nlabels
-                pool2 = convert(AbstractVector{T2}, pool)
+                pool2 = convert(Vector{T2}, pool)
                 push!(pool2, vi)
                 labels2 = convert(AbstractArray{I2}, labels)
                 labels2[i] = nlabels
