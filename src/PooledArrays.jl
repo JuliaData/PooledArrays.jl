@@ -333,7 +333,7 @@ end
 
 function _map_notpure(f, xs::PooledArray, start,
                       invpool::Dict{T,I}, pool::Vector{T},
-                      labels::Array{I}, nlabels::Int) where {T, I<:Integer}
+                      labels::AbstractArray{I}, nlabels::Int) where {T, I<:Integer}
     for i in start:length(xs)
         vi = f(xs[i])
         Ti = typeof(vi)
@@ -349,7 +349,7 @@ function _map_notpure(f, xs::PooledArray, start,
                 invpool2[vi] = nlabels
                 pool2 = convert(Vector{T2}, pool)
                 push!(pool2, vi)
-                labels2 = convert(Vector{I2}, labels)
+                labels2 = convert(AbstractArray{I2}, labels)
                 labels2[i] = nlabels
                 return _map_notpure(f, xs, i + 1, invpool2, pool2,
                                     labels2, nlabels)
