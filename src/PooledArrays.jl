@@ -320,7 +320,8 @@ in `x` is small.
 If `pure=false` the value returned by `map` is not type stable.
 """
 function Base.map(f, x::PooledArray{<:Any, R, N, RA}; pure::Bool=false)::Union{PooledArray{<:Any, R, N, RA},
-                                                                               PooledArray{<:Any, Int64, N, Vector{Int64}}} where {R, N, RA}
+                                                                               PooledArray{<:Any, Int64, N,
+                                                                                           typeof(similar(x.refs, Int, ntuple(i -> 0, ndims(x.refs))))}} where {R, N, RA}
     pure && return _map_pure(f, x)
     length(x) == 0 && return PooledArray([f(v) for v in x])
     v1 = f(x[1])
@@ -343,7 +344,7 @@ function _map_notpure(f, xs::PooledArray, start,
             labels[i] = lbl
         else
             if nlabels == typemax(I) || Ti !== T
-                I2 = nlabels == typemax(I) ? Int64 : I
+                I2 = nlabels == typemax(I) ? Int : I
                 T2 = Ti isa T ? T : Base.promote_typejoin(T, Ti)
                 nlabels += 1
                 invpool2 = convert(Dict{T2, I2}, invpool)
