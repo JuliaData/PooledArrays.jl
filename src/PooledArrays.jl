@@ -320,7 +320,7 @@ in `x` is small.
 If `pure=false` the value returned by `map` is not type stable.
 """
 function Base.map(f, x::PooledArray{<:Any, R, N, RA}; pure::Bool=false)::Union{PooledArray{<:Any, R, N, RA},
-                                                                               PooledArray{<:Any, Int64, N,
+                                                                               PooledArray{<:Any, Int, N,
                                                                                            typeof(similar(x.refs, Int, ntuple(i -> 0, ndims(x.refs))))}} where {R, N, RA}
     pure && return _map_pure(f, x)
     length(x) == 0 && return PooledArray([f(v) for v in x])
