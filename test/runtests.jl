@@ -546,10 +546,10 @@ end
     x = PooledArray(reshape(fill(1, 200), 2, :), signed=true, compress=true)
     y = map(f(), x)
     @test y == reshape(-1:-1:-200, 2, :)
-    @test typeof(y) === PooledVector{Int, Int, Matrix{Int}}
+    @test typeof(y) === PooledMatrix{Int, Int, Matrix{Int}}
 
     x = PooledArray(fill("a"), signed=true, compress=true)
     y = map(f(), x)
     @test y == fill(-1)
-    @test typeof(y) === PooledVector{Int, Int8, Array{Int8, 0}}
+    @test typeof(y) === PooledArray{Int, Int8, 0, Array{Int8, 0}}
 end
