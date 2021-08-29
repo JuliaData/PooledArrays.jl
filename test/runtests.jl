@@ -560,8 +560,5 @@ end
     @test y == fill(-1)
     @test typeof(y) === PooledArray{Int, Int8, 0, Array{Int8, 0}}
 
-    for signed in (true, false), compress in (true, false), len in (1, 100, 1000)
-        x = PooledArray(fill(1, len), signed=true, compress=true);
-        VERSION >= v"1.6" && @inferred PooledVector{Int, Int, Vector{Int}} map(identity, x)
-    end
+    VERSION >= v"1.6" && include("map_inference.jl")
 end
