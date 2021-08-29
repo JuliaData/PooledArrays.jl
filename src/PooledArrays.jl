@@ -317,7 +317,9 @@ exactly once (even if some elements in pool are not present it `x`).
 This will typically be much faster when the proportion of unique values
 in `x` is small.
 
-If `pure=false` the value returned by `map` is not type stable.
+If `pure=false`, the returned array will use the same reference type
+as `x`, or `Int` if the number of unique values in the result is too large
+to fit in that type.
 """
 function Base.map(f, x::PooledArray{<:Any, R, N, RA}; pure::Bool=false)::Union{PooledArray{<:Any, R, N, RA},
                                                                                PooledArray{<:Any, Int, N,
