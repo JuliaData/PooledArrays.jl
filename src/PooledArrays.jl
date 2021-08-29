@@ -76,7 +76,7 @@ const PooledArrOrSub = Union{SubArray{T, N, <:PooledArray{T, R}},
 ##############################################################################
 
 # Echo inner constructor as an outer constructor
-PooledArray(refs::RefArray{RA}, invpool::Dict{T,R}, pool::Vector{T}=_invert(invpool),
+@inline PooledArray(refs::RefArray{RA}, invpool::Dict{T,R}, pool::Vector{T}=_invert(invpool),
             refcount::Threads.Atomic{Int}=Threads.Atomic{Int}(1)) where {T,R,RA<:AbstractArray{R}} =
     PooledArray{T,R,ndims(RA),RA}(refs, invpool, pool, refcount)
 
@@ -89,7 +89,7 @@ function _our_copy(x::SubArray{<:Any, 0})
     return y
 end
 
-function PooledArray(d::PooledArrOrSub)
+@inline function PooledArray(d::PooledArrOrSub)
     Threads.atomic_add!(refcount(d), 1)
     return PooledArray(RefArray(_our_copy(DataAPI.refarray(d))),
                        DataAPI.invrefpool(d), DataAPI.refpool(d), refcount(d))
@@ -140,9 +140,8 @@ _widen(::Type{Int32}) = Int64
 Freshly allocate `PooledArray` using the given array as a source where each
 element will be referenced as an integer of the given type.
 
-`PooledArray` constructor is not type stable.
-
-If `reftype` is not specified, Boolean keyword arguments `signed` and `compress`
+If `reftype` is not specified then `PooledArray` constructor is not type stable.
+In this case boolean keyword arguments `signed` and `compress`
 determine the type of integer references. By default (`signed=false`), unsigned integers
 are used, as they have a greater range.
 However, the Arrow standard at https://arrow.apache.org/, as implemented in
@@ -165,7 +164,7 @@ if all values already exist in the pool.
 """
 PooledArray
 
-function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
+@inline function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
     refs, invpool, pool = _label(d, T, R)
 
     if length(invpool) > typemax(R)
@@ -176,19 +175,19 @@ function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
     return PooledArray(RefArray(refs::Vector{R}), invpool::Dict{T,R}, pool)
 end
 
-function PooledArray{T}(d::AbstractArray; signed::Bool=false, compress::Bool=false) where {T}
+@inline function PooledArray{T}(d::AbstractArray; signed::Bool=false, compress::Bool=false) where {T}
     R = signed ? (compress ? Int8 : DEFAULT_SIGNED_REF_TYPE) : (compress ? UInt8 : DEFAULT_POOLED_REF_TYPE)
     refs, invpool, pool = _label(d, T, R)
     return PooledArray(RefArray(refs), invpool, pool)
 end
 
-PooledArray(d::AbstractArray{T}, r::Type) where {T} = PooledArray{T}(d, r)
-PooledArray(d::AbstractArray{T}; signed::Bool=false, compress::Bool=false) where {T} =
+@inline PooledArray(d::AbstractArray{T}, r::Type) where {T} = PooledArray{T}(d, r)
+@inline PooledArray(d::AbstractArray{T}; signed::Bool=false, compress::Bool=false) where {T} =
     PooledArray{T}(d, signed=signed, compress=compress)
 
 # Construct an empty PooledVector of a specific type
-PooledArray(t::Type) = PooledArray(Array(t,0))
-PooledArray(t::Type, r::Type) = PooledArray(Array(t,0), r)
+@inline PooledArray(t::Type) = PooledArray(Array(t,0))
+@inline PooledArray(t::Type, r::Type) = PooledArray(Array(t,0), r)
 
 ##############################################################################
 ##

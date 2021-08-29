@@ -126,6 +126,13 @@ end
     @test PooledArrays.fast_sortable(v3) == PooledArray([1, 3, 2, 4])
     @test isbitstype(eltype(PooledArrays.fast_sortable(v3)))
     Base.Order.Perm(Base.Order.Forward, v3).data == PooledArray([1, 3, 2, 4])
+
+    for T in (Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64)
+        @inferred PooledArray([1, 2, 3], T)
+    end
+    for signed in (true, false), compress in (true, false)
+        @test_throws ErrorException @inferred PooledArray([1, 2, 3])
+    end
 end
 
 @testset "pool non-copying constructor and copy tests" begin
@@ -552,4 +559,9 @@ end
     y = map(f(), x)
     @test y == fill(-1)
     @test typeof(y) === PooledArray{Int, Int8, 0, Array{Int8, 0}}
+
+    for signed in (true, false), compress in (true, false), len in (1, 100, 1000)
+        x = PooledArray(fill(1, len), signed=true, compress=true);
+        @inferred PooledVector{Int, Int, Vector{Int}} map(identity, x)
+    end
 end
