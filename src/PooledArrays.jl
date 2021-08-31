@@ -40,7 +40,7 @@ mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
                                    refcount::Threads.Atomic{Int}=Threads.Atomic{Int}(1)) where {T,R,N,RA<:AbstractArray{R, N}}
         # we currently support only 1-based indexing for refs
         # TODO: change to Base.require_one_based_indexing after we drop Julia 1.0 support
-        for ax in axes(re.a)
+        for ax in axes(rs.a)
             if first(ax) != 1
                 throw(ArgumentError("offset arrays are not supported but got an array with index other than 1"))
             end
