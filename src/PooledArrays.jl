@@ -39,13 +39,10 @@ mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
                                    pool::Vector{T}=_invert(invpool),
                                    refcount::Threads.Atomic{Int}=Threads.Atomic{Int}(1)) where {T,R,N,RA<:AbstractArray{R, N}}
         # we currently support only 1-based indexing for refs
-        if VERSION >= v"1.6"
-            Base.require_one_based_indexing(rs.a)
-        else
-            for ax in axes(re.a)
-                if first(ax) != 1
-                    throw(ArgumentError("offset arrays are not supported but got an array with index other than 1"))
-                end
+        # TODO: change to Base.require_one_based_indexing after we drop Julia 1.0 support
+        for ax in axes(re.a)
+            if first(ax) != 1
+                throw(ArgumentError("offset arrays are not supported but got an array with index other than 1"))
             end
         end
 
