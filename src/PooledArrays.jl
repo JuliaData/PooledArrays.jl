@@ -149,7 +149,7 @@ Freshly allocate `PooledArray` using the given array as a source where each
 element will be referenced as an integer of the given type.
 
 If `reftype` is not specified then `PooledArray` constructor is not type stable.
-In this case boolean keyword arguments `signed` and `compress`
+In this case Boolean keyword arguments `signed` and `compress`
 determine the type of integer references. By default (`signed=false`), unsigned integers
 are used, as they have a greater range.
 However, the Arrow standard at https://arrow.apache.org/, as implemented in
