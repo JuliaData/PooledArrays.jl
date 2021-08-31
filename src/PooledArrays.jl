@@ -38,6 +38,9 @@ mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
     function PooledArray{T,R,N,RA}(rs::RefArray{RA}, invpool::Dict{T, R},
                                    pool::Vector{T}=_invert(invpool),
                                    refcount::Threads.Atomic{Int}=Threads.Atomic{Int}(1)) where {T,R,N,RA<:AbstractArray{R, N}}
+        # we currently support only 1-based indexing for refs
+        Base.require_one_based_indexing(rs.a)
+
         # this is a quick but incomplete consistency check
         if length(pool) != length(invpool)
             throw(ArgumentError("inconsistent pool and invpool"))
