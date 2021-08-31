@@ -131,7 +131,9 @@ end
         @inferred PooledArray([1, 2, 3], T)
     end
     for signed in (true, false), compress in (true, false)
-        @test_throws ErrorException @inferred PooledArray([1, 2, 3])
+        @test_throws ErrorException @inferred PooledArray([1, 2, 3],
+                                                          signed=signed,
+                                                          compress=compress)
     end
 end
 
@@ -560,5 +562,10 @@ end
     @test y == fill(-1)
     @test typeof(y) === PooledArray{Int, Int8, 0, Array{Int8, 0}}
 
-    VERSION >= v"1.6" && include("map_inference.jl")
+    @static if VERSION >= v"1.6"
+        for signed in (true, false), compress in (true, false), len in (1, 100, 1000)
+            x = PooledArray(fill(1, len), signed=signed, compress=compress)
+            @inferred PooledVector{Int, Int, Vector{Int}} map(identity, x)
+        end
+    end
 end
