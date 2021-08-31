@@ -339,14 +339,13 @@ function _map_notpure(f, xs::PooledArray, start,
                       labels::AbstractArray{I}, nlabels::Int) where {T, I<:Integer}
     for i in start:length(xs)
         vi = f(xs[i])
-        Ti = typeof(vi)
         lbl = get(invpool, vi, zero(I))
         if lbl != zero(I)
             labels[i] = lbl
         else
-            if nlabels == typemax(I) || Ti !== T
+            if nlabels == typemax(I) || !(vi isa T)
                 I2 = nlabels == typemax(I) ? Int : I
-                T2 = Ti isa T ? T : Base.promote_typejoin(T, Ti)
+                T2 = vi isa T ? T : Base.promote_typejoin(T, typeof(vi))
                 nlabels += 1
                 invpool2 = convert(Dict{T2, I2}, invpool)
                 invpool2[vi] = nlabels
