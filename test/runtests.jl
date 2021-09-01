@@ -126,6 +126,15 @@ end
     @test PooledArrays.fast_sortable(v3) == PooledArray([1, 3, 2, 4])
     @test isbitstype(eltype(PooledArrays.fast_sortable(v3)))
     Base.Order.Perm(Base.Order.Forward, v3).data == PooledArray([1, 3, 2, 4])
+
+    for T in (Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64)
+        @inferred PooledArray([1, 2, 3], T)
+    end
+    for signed in (true, false), compress in (true, false)
+        @test_throws ErrorException @inferred PooledArray([1, 2, 3],
+                                                          signed=signed,
+                                                          compress=compress)
+    end
 end
 
 @testset "pool non-copying constructor and copy tests" begin
@@ -499,4 +508,64 @@ end
     pa1 = PooledArray([1 2; 3 4])
     pa2 = repeat(pa1, inner = (2, 1))
     @test pa2 == [1 2; 1 2; 3 4; 3 4]
+end
+
+@testset "map pure tests" begin
+    x = PooledArray([1, 2, 3])
+    x[3] = 1
+    y = map(-, x, pure=true)
+    @test refpool(y) == [-1, -2, -3]
+    @test y == [-1, -2, -1]
+
+    y = map(-, x)
+    @test refpool(y) == [-1, -2]
+    @test y == [-1, -2, -1]
+
+    function f()
+        i = Ref(0)
+        return x -> (i[] -= 1; i[])
+    end
+
+    # the order is strange as we iterate invpool which is a Dict
+    # and it depends on the version of Julia
+    y = map(f(), x, pure=true)
+    d = Dict(Set(1:3) .=> -1:-1:-3)
+    @test refpool(y) == [d[i] for i in 1:3]
+    @test y == [d[v] for v in x]
+
+    y = map(f(), x)
+    @test refpool(y) == [-1, -2, -3]
+    @test y == [-1, -2, -3]
+
+    x = PooledArray([1, missing, 2])
+    y = map(identity, x)
+    @test isequal(y, [1, missing, 2])
+    @test typeof(y) === PooledVector{Union{Missing, Int}, UInt32, Vector{UInt32}}
+
+    x = PooledArray([1, missing, 2], signed=true, compress=true)
+    y = map(identity, x)
+    @test isequal(y, [1, missing, 2])
+    @test typeof(y) === PooledVector{Union{Missing, Int}, Int8, Vector{Int8}}
+
+    x = PooledArray(fill(1, 200), signed=true, compress=true)
+    y = map(f(), x)
+    @test y == -1:-1:-200
+    @test typeof(y) === PooledVector{Int, Int, Vector{Int}}
+
+    x = PooledArray(reshape(fill(1, 200), 2, :), signed=true, compress=true)
+    y = map(f(), x)
+    @test y == reshape(-1:-1:-200, 2, :)
+    @test typeof(y) === PooledMatrix{Int, Int, Matrix{Int}}
+
+    x = PooledArray(fill("a"), signed=true, compress=true)
+    y = map(f(), x)
+    @test y == fill(-1)
+    @test typeof(y) === PooledArray{Int, Int8, 0, Array{Int8, 0}}
+
+    @static if VERSION >= v"1.6"
+        for signed in (true, false), compress in (true, false), len in (1, 100, 1000)
+            x = PooledArray(fill(1, len), signed=signed, compress=compress)
+            @inferred PooledVector{Int, Int, Vector{Int}} map(identity, x)
+        end
+    end
 end

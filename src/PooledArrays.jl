@@ -38,6 +38,14 @@ mutable struct PooledArray{T, R<:Integer, N, RA} <: AbstractArray{T, N}
     function PooledArray{T,R,N,RA}(rs::RefArray{RA}, invpool::Dict{T, R},
                                    pool::Vector{T}=_invert(invpool),
                                    refcount::Threads.Atomic{Int}=Threads.Atomic{Int}(1)) where {T,R,N,RA<:AbstractArray{R, N}}
+        # we currently support only 1-based indexing for refs
+        # TODO: change to Base.require_one_based_indexing after we drop Julia 1.0 support
+        for ax in axes(rs.a)
+            if first(ax) != 1
+                throw(ArgumentError("offset arrays are not supported but got an array with index other than 1"))
+            end
+        end
+
         # this is a quick but incomplete consistency check
         if length(pool) != length(invpool)
             throw(ArgumentError("inconsistent pool and invpool"))
@@ -76,7 +84,7 @@ const PooledArrOrSub = Union{SubArray{T, N, <:PooledArray{T, R}},
 ##############################################################################
 
 # Echo inner constructor as an outer constructor
-PooledArray(refs::RefArray{RA}, invpool::Dict{T,R}, pool::Vector{T}=_invert(invpool),
+@inline PooledArray(refs::RefArray{RA}, invpool::Dict{T,R}, pool::Vector{T}=_invert(invpool),
             refcount::Threads.Atomic{Int}=Threads.Atomic{Int}(1)) where {T,R,RA<:AbstractArray{R}} =
     PooledArray{T,R,ndims(RA),RA}(refs, invpool, pool, refcount)
 
@@ -89,7 +97,7 @@ function _our_copy(x::SubArray{<:Any, 0})
     return y
 end
 
-function PooledArray(d::PooledArrOrSub)
+@inline function PooledArray(d::PooledArrOrSub)
     Threads.atomic_add!(refcount(d), 1)
     return PooledArray(RefArray(_our_copy(DataAPI.refarray(d))),
                        DataAPI.invrefpool(d), DataAPI.refpool(d), refcount(d))
@@ -131,6 +139,7 @@ _widen(::Type{UInt32}) = UInt64
 _widen(::Type{Int8}) = Int16
 _widen(::Type{Int16}) = Int32
 _widen(::Type{Int32}) = Int64
+
 # Constructor from array, invpool, and ref type
 
 """
@@ -139,7 +148,8 @@ _widen(::Type{Int32}) = Int64
 Freshly allocate `PooledArray` using the given array as a source where each
 element will be referenced as an integer of the given type.
 
-If `reftype` is not specified, Boolean keyword arguments `signed` and `compress`
+If `reftype` is not specified then `PooledArray` constructor is not type stable.
+In this case Boolean keyword arguments `signed` and `compress`
 determine the type of integer references. By default (`signed=false`), unsigned integers
 are used, as they have a greater range.
 However, the Arrow standard at https://arrow.apache.org/, as implemented in
@@ -162,7 +172,7 @@ if all values already exist in the pool.
 """
 PooledArray
 
-function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
+@inline function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
     refs, invpool, pool = _label(d, T, R)
 
     if length(invpool) > typemax(R)
@@ -173,19 +183,19 @@ function PooledArray{T}(d::AbstractArray, r::Type{R}) where {T,R<:Integer}
     return PooledArray(RefArray(refs::Vector{R}), invpool::Dict{T,R}, pool)
 end
 
-function PooledArray{T}(d::AbstractArray; signed::Bool=false, compress::Bool=false) where {T}
+@inline function PooledArray{T}(d::AbstractArray; signed::Bool=false, compress::Bool=false) where {T}
     R = signed ? (compress ? Int8 : DEFAULT_SIGNED_REF_TYPE) : (compress ? UInt8 : DEFAULT_POOLED_REF_TYPE)
     refs, invpool, pool = _label(d, T, R)
     return PooledArray(RefArray(refs), invpool, pool)
 end
 
-PooledArray(d::AbstractArray{T}, r::Type) where {T} = PooledArray{T}(d, r)
-PooledArray(d::AbstractArray{T}; signed::Bool=false, compress::Bool=false) where {T} =
+@inline PooledArray(d::AbstractArray{T}, r::Type) where {T} = PooledArray{T}(d, r)
+@inline PooledArray(d::AbstractArray{T}; signed::Bool=false, compress::Bool=false) where {T} =
     PooledArray{T}(d, signed=signed, compress=compress)
 
 # Construct an empty PooledVector of a specific type
-PooledArray(t::Type) = PooledArray(Array(t,0))
-PooledArray(t::Type, r::Type) = PooledArray(Array(t,0), r)
+@inline PooledArray(t::Type) = PooledArray(Array(t,0))
+@inline PooledArray(t::Type, r::Type) = PooledArray(Array(t,0), r)
 
 ##############################################################################
 ##
@@ -304,7 +314,66 @@ Base.findall(pdv::PooledVector{Bool}) = findall(convert(Vector{Bool}, pdv))
 ##
 ##############################################################################
 
-function Base.map(f, x::PooledArray{T,R}) where {T,R<:Integer}
+"""
+    map(f, x::PooledArray; pure::Bool=false)
+
+Transform `PooledArray` `x` by applying `f` to each element.
+
+If `pure=true` then `f` is applied to each element of pool of `x`
+exactly once (even if some elements in pool are not present it `x`).
+This will typically be much faster when the proportion of unique values
+in `x` is small.
+
+If `pure=false`, the returned array will use the same reference type
+as `x`, or `Int` if the number of unique values in the result is too large
+to fit in that type.
+"""
+function Base.map(f, x::PooledArray{<:Any, R, N, RA}; pure::Bool=false)::Union{PooledArray{<:Any, R, N, RA},
+                                                                               PooledArray{<:Any, Int, N,
+                                                                                           typeof(similar(x.refs, Int, ntuple(i -> 0, ndims(x.refs))))}} where {R, N, RA}
+    pure && return _map_pure(f, x)
+    length(x) == 0 && return PooledArray([f(v) for v in x])
+    v1 = f(x[1])
+    invpool = Dict(v1 => one(eltype(x.refs)))
+    pool = [v1]
+    labels = similar(x.refs)
+    labels[1] = 1
+    nlabels = 1
+    return _map_notpure(f, x, 2, invpool, pool, labels, nlabels)
+end
+
+function _map_notpure(f, xs::PooledArray, start,
+                      invpool::Dict{T,I}, pool::Vector{T},
+                      labels::AbstractArray{I}, nlabels::Int) where {T, I<:Integer}
+    for i in start:length(xs)
+        vi = f(xs[i])
+        lbl = get(invpool, vi, zero(I))
+        if lbl != zero(I)
+            labels[i] = lbl
+        else
+            if nlabels == typemax(I) || !(vi isa T)
+                I2 = nlabels == typemax(I) ? Int : I
+                T2 = vi isa T ? T : Base.promote_typejoin(T, typeof(vi))
+                nlabels += 1
+                invpool2 = convert(Dict{T2, I2}, invpool)
+                invpool2[vi] = nlabels
+                pool2 = convert(Vector{T2}, pool)
+                push!(pool2, vi)
+                labels2 = convert(AbstractArray{I2}, labels)
+                labels2[i] = nlabels
+                return _map_notpure(f, xs, i + 1, invpool2, pool2,
+                                    labels2, nlabels)
+            end
+            nlabels += 1
+            labels[i] = nlabels
+            invpool[vi] = nlabels
+            push!(pool, vi)
+        end
+    end
+    return PooledArray(RefArray(labels), invpool, pool)
+end
+
+function _map_pure(f, x::PooledArray)
     ks = collect(keys(x.invpool))
     vs = collect(values(x.invpool))
     ks1 = map(f, ks)
@@ -601,14 +670,14 @@ _perm(o::F, z::V) where {F, V} = Base.Order.Perm{F, V}(o, z)
 
 Base.Order.Perm(o::Base.Order.ForwardOrdering, y::PooledArray) = _perm(o, fast_sortable(y))
 
-function Base.repeat(x::PooledArray, m::Integer...) 
+function Base.repeat(x::PooledArray, m::Integer...)
     Threads.atomic_add!(x.refcount, 1)
     PooledArray(RefArray(repeat(x.refs, m...)), x.invpool, x.pool, x.refcount)
 end
 
 function Base.repeat(x::PooledArray; inner = nothing, outer = nothing)
     Threads.atomic_add!(x.refcount, 1)
-    PooledArray(RefArray(repeat(x.refs; inner = inner, outer = outer)), 
+    PooledArray(RefArray(repeat(x.refs; inner = inner, outer = outer)),
                                 x.invpool, x.pool, x.refcount)
 end
 
