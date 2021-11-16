@@ -569,3 +569,15 @@ end
         end
     end
 end
+
+@testset "insert! test" begin
+    x = PooledArray([1, 2, 3])
+    @test insert!(x, 2, 10) == [1, 10, 2, 3]
+    @test_throws ArgumentError insert!(x, true, 10)
+    @test x == [1, 10, 2, 3]
+    @test x.pool = [1, 2, 3, 10]
+    @test insert!(x, 3, 'c') == [1, 10, 99, 2, 3]
+    @test x.pool = [1, 2, 3, 10, 99]
+    @test insert!(x, 1, true) == [1, 1, 10, 99, 2, 3]
+    @test x.pool = [1, 2, 3, 10, 99]
+end
