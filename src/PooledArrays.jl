@@ -590,8 +590,13 @@ end
 ##
 ##############################################################################
 
-function Base.push!(pv::PooledVector{S,R}, v::T) where {S,R,T}
+function Base.push!(pv::PooledVector, v)
     push!(pv.refs, getpoolidx(pv, v))
+    return pv
+end
+
+function Base.insert!(pv::PooledVector, i::Integer, v)
+    insert!(pv.refs, i, getpoolidx(pv, v))
     return pv
 end
 
