@@ -590,12 +590,12 @@ end
 ##
 ##############################################################################
 
-function Base.push!(pv::PooledVector, v)
+function Base.push!(pv::PooledVector, v) # this function is not thread safe
     push!(pv.refs, getpoolidx(pv, v))
     return pv
 end
 
-function Base.insert!(pv::PooledVector, i::Integer, v)
+function Base.insert!(pv::PooledVector, i::Integer, v) # this function is not thread safe
     i isa Bool && throw(ArgumentError("invalid index: $i of type Bool"))
     if !(1 <= i <= length(pv.refs) + 1)
         throw(BoundsError("attempt to insert to a vector with length $(length(pv)) at index $i"))
