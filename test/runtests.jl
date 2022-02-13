@@ -585,3 +585,16 @@ end
     @test_throws BoundsError insert!(x, 9, true)
     @test x == [1, 1, 10, 99, 2, 3, 1]
 end
+
+@testset "pop! and popfirst!" begin
+    x = PooledArray([1, 2, 3])
+    @test pop!(x) == 3
+    @test x == [1, 2]
+    @test popfirst!(x) == 1
+    @test x == [2]
+    x = PooledArray(["1", "2", "3"])
+    @test pop!(x) == "3"
+    @test x == ["1", "2"]
+    @test popfirst!(x) == "1"
+    @test x == ["2"]
+end
