@@ -129,7 +129,10 @@ end
 
     for T in (Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64)
         @inferred PooledArray([1, 2, 3], T)
+        @inferred PooledArray([1 2 3], T)
     end
+    @test typeof(PooledArray([1 2; 3 4], Int8)) === PooledMatrix{Int, Int8, Matrix{Int8}}
+
     for signed in (true, false), compress in (true, false)
         @test_throws ErrorException @inferred PooledArray([1, 2, 3],
                                                           signed=signed,
@@ -584,8 +587,4 @@ end
     @test insert!(x, 7, true) == [1, 1, 10, 99, 2, 3, 1]
     @test_throws BoundsError insert!(x, 9, true)
     @test x == [1, 1, 10, 99, 2, 3, 1]
-end
-
-@testset "constructor with reftype" begin
-    @test typeof(PooledArray([1 2; 3 4], Int8)) === PooledMatrix{Int, Int8, Matrix{Int8}}
 end
