@@ -180,7 +180,7 @@ PooledArray
     end
 
     # Assertions are needed since _label is not type stable
-    return PooledArray(RefArray(refs::Array{ndims(d), R}), invpool::Dict{T,R}, pool)
+    return PooledArray(RefArray(refs::Array{R, ndims(d)}), invpool::Dict{T,R}, pool)
 end
 
 @inline function PooledArray{T}(d::AbstractArray; signed::Bool=false, compress::Bool=false) where {T}
