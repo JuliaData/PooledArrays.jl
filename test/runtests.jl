@@ -587,5 +587,5 @@ end
 end
 
 @testset "constructor with reftype" begin
-    @test typeof(PooledAray([1 2; 3 4], Int8)) === PooledMatrix{Int, Int8, Matrix{Int8}}
+    @test typeof(PooledArray([1 2; 3 4], Int8)) === PooledMatrix{Int, Int8, Matrix{Int8}}
 end
