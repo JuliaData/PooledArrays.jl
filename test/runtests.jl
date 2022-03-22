@@ -585,3 +585,7 @@ end
     @test_throws BoundsError insert!(x, 9, true)
     @test x == [1, 1, 10, 99, 2, 3, 1]
 end
+
+@testset "constructor with reftype" begin
+    @test typeof(PooledAray([1 2; 3 4], Int8) === PooledMatrix{Int, Int8, Matrix{Int8}}
+end
