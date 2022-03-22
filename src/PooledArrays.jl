@@ -179,7 +179,8 @@ PooledArray
         throw(ArgumentError("Cannot construct a PooledArray with type $R with a pool of size $(length(pool))"))
     end
 
-    return PooledArray(RefArray(refs), invpool, pool)
+    # Assertions are needed since _label is not type stable
+    return PooledArray(RefArray(refs::Array{ndims(d), R}), invpool::Dict{T,R}, pool)
 end
 
 @inline function PooledArray{T}(d::AbstractArray; signed::Bool=false, compress::Bool=false) where {T}
