@@ -30,10 +30,14 @@ julia> PooledArray(["a" "b"; "c" "d"])
  "c"  "d"
  ```
 
-`PooledArray` performs compression by storing an array of reference integers and a mapping from integers to its elements in a dictionary.
-In this way, if the size of the reference integer is smaller than the size of the actual elements the resulting `PooledArray` has a smaller memory footprint than the equivalent `Array`.
-By default `UInt32` is used as a type of reference integers. However, you can specify the reference integer type you want to use by passing it
-as a second argument to the constructor. This is usually done when you know that you will have only a few unique elements in the `PooledArray`.
+`PooledArray` performs compression by storing an array of reference integers and
+a mapping from integers to its elements in a dictionary. In this way, if the
+size of the reference integer is smaller than the size of the actual elements
+the resulting `PooledArray` has a smaller memory footprint than the equivalent
+`Array`. By default `UInt32` is used as a type of reference integers. However,
+you can specify the reference integer type you want to use by passing it as a
+second argument to the constructor. This is usually done when you know that you
+will have only a few unique elements in the `PooledArray`.
 
 ```
 julia> PooledArray(["a", "b", "c", "d"], UInt8)
@@ -44,10 +48,11 @@ julia> PooledArray(["a", "b", "c", "d"], UInt8)
  "d"
  ```
 
-Alternatively you can pass the `compress` and `signed` keyword arguments to the `PooledArray` constructor to automatically select the reference integer type.
-When you pass `compress=true` then the reference integer type is chosen to be the smallest type that is large enough to hold all unique values in array.
-When you pass `signed=true` the reference type is signed (by default it is unsigned).
-
+Alternatively you can pass the `compress` and `signed` keyword arguments to the
+`PooledArray` constructor to automatically select the reference integer type.
+When you pass `compress=true` then the reference integer type is chosen to be
+the smallest type that is large enough to hold all unique values in array. When
+you pass `signed=true` the reference type is signed (by default it is unsigned).
 ```
 julia> PooledArray(["a", "b", "c", "d"]; compress=true, signed=true)
 4-element PooledVector{String, Int8, Vector{Int8}}:
@@ -57,7 +62,8 @@ julia> PooledArray(["a", "b", "c", "d"]; compress=true, signed=true)
  "d"
 ```
 
-**Maintenance**: PooledArrays is maintained collectively by the [JuliaData collaborators](https://github.com/orgs/JuliaData/people).
+**Maintenance**: PooledArrays is maintained collectively by the
+[JuliaData collaborators](https://github.com/orgs/JuliaData/people).
 Responsiveness to pull requests and issues can vary, depending on the availability of key collaborators.
 
 ## Related Packages
