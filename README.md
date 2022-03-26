@@ -15,7 +15,7 @@ A pooled representation of arrays for purposes of compression when there are few
 
 Working with `PooledArray` objects does not differ from working with general
 `AbstractArray` objects, with two exceptions:
-* If you hold mutable objects in PooledArray it is not allowed to modify them
+* If you hold mutable objects in `PooledArray` it is not allowed to modify them
   after they are stored in it.
 * In multi-threaded context it is not safe to assign values that are not already
   present in a `PooledArray`'s pool from one thread while either reading or
