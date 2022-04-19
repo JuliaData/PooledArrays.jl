@@ -613,14 +613,14 @@ function Base.append!(pv::PooledVector, items::AbstractArray)
     return pv
 end
 
-Base.pop!(pv::PooledVector) = pv.invpool[pop!(pv.refs)]
+Base.pop!(pv::PooledVector) = pv.pool[pop!(pv.refs)]
 
 function Base.pushfirst!(pv::PooledVector{S,R}, v::T) where {S,R,T}
     pushfirst!(pv.refs, getpoolidx(pv, v))
     return pv
 end
 
-Base.popfirst!(pv::PooledVector) = pv.invpool[popfirst!(pv.refs)]
+Base.popfirst!(pv::PooledVector) = pv.pool[popfirst!(pv.refs)]
 
 Base.empty!(pv::PooledVector) = (empty!(pv.refs); pv)
 
