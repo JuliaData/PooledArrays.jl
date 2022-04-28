@@ -113,7 +113,8 @@ function _label(xs::AbstractArray,
                 nlabels = 0,
                ) where {T, I<:Integer}
 
-    @inbounds for (i, idx) in enumerate(eachindex(xs))
+    @inbounds for i in start:length(xs)
+        idx = i + firstindex(xs) - 1
         if !isassigned(xs, idx)
             labels[i] = zero(I)
         else
