@@ -1,4 +1,4 @@
-using Test
+using Test, OffsetArrays
 using PooledArrays
 using DataAPI: refarray, refvalue, refpool, invrefpool
 using PooledArrays: refcount
@@ -600,4 +600,22 @@ end
     @test x == ["1", "2"]
     @test popfirst!(x) == "1"
     @test x == ["2"]
+end
+
+@testset "constructor corner cases" begin
+    x = Vector{Any}(undef, 3)
+    y = PooledArray(x)
+    @test y isa PooledArray{Any}
+    @test all(iszero, y.refs)
+    @test isempty(y.pool)
+    @test isempty(y.invpool)
+
+    x[2] = "a"
+    for v in (x, OffsetVector(x, -5))
+        y = PooledArray(v)
+        @test y isa PooledArray{Any}
+        @test y.refs == [0, 1, 0]
+        @test y.pool == ["a"]
+        @test y.invpool == Dict("a" => 1)
+    end
 end
