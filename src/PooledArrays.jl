@@ -114,20 +114,25 @@ function _label(xs::AbstractArray,
                ) where {T, I<:Integer}
 
     @inbounds for i in start:length(xs)
-        x = xs[i]
-        lbl = get(invpool, x, zero(I))
-        if lbl !== zero(I)
-            labels[i] = lbl
+        idx = i + firstindex(xs) - 1
+        if !isassigned(xs, idx)
+            labels[i] = zero(I)
         else
-            if nlabels == typemax(I)
-                I2 = _widen(I)
-                return _label(xs, T, I2, i, convert(Vector{I2}, labels),
-                              convert(Dict{T, I2}, invpool), pool, nlabels)
+            x = xs[idx]
+            lbl = get(invpool, x, zero(I))
+            if lbl !== zero(I)
+                labels[i] = lbl
+            else
+                if nlabels == typemax(I)
+                    I2 = _widen(I)
+                    return _label(xs, T, I2, i, convert(Vector{I2}, labels),
+                                convert(Dict{T, I2}, invpool), pool, nlabels)
+                end
+                nlabels += 1
+                labels[i] = nlabels
+                invpool[x] = nlabels
+                push!(pool, x)
             end
-            nlabels += 1
-            labels[i] = nlabels
-            invpool[x] = nlabels
-            push!(pool, x)
         end
     end
     labels, invpool, pool
