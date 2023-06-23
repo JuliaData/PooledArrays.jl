@@ -2,6 +2,8 @@ using Test, OffsetArrays
 using PooledArrays
 using DataAPI: refarray, refvalue, refpool, invrefpool
 using PooledArrays: refcount
+using Random: randperm
+
 import Future.copy!
 
 if Threads.nthreads() < 2
@@ -34,6 +36,17 @@ end
 
     @test sort(pc) == sort(c)
     @test sortperm(pc) == sortperm(c)
+
+    perm = randperm(length(pc))
+    pc2 = copy(pc)
+    pc3 = permute!(pc2, perm)
+    @test pc2 === pc3
+    @test pc2 == pc[perm]
+
+    pc2 = copy(pc)
+    pc3 = invpermute!(pc2, perm)
+    @test pc2 === pc3
+    @test pc2[perm] == pc
 
     push!(pc, -10)
     push!(c, -10)
