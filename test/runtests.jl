@@ -16,9 +16,9 @@ end
     @test eltype(PooledArray(Int[])) === Int
 
     @test PooledArray(Int) == Int[]
-    @test PooledArray(Int) <: PooledVector{Int, UInt32}
+    @test PooledArray(Int) isa PooledVector{Int, UInt32}
     @test PooledArray(Int, UInt64) == Int[]
-    @test PooledArray(Int, UInt64) <: PooledVector{Int, UInt64}
+    @test PooledArray(Int, UInt64) isa PooledVector{Int, UInt64}
 
     a = rand(10)
     b = rand(10,10)
