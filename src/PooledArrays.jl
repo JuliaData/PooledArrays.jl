@@ -307,14 +307,18 @@ function Base.invpermute!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
     return x
 end
 
-function Base.permute!!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
-    Base.permute!!(x.refs, p)
-    return x
+if isdefined(Base, :permute!!)
+    function Base.permute!!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
+        Base.permute!!(x.refs, p)
+        return x
+    end
 end
 
-function Base.invpermute!!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
-    Base.invpermute!!(x.refs, p)
-    return x
+if isdefined(Base, :invpermute!!)
+    function Base.invpermute!!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
+        Base.invpermute!!(x.refs, p)
+        return x
+    end
 end
 
 Base.similar(pa::PooledArray{T,R}, S::Type, dims::Dims) where {T,R} =
