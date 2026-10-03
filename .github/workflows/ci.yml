@@ -9,6 +9,9 @@ on:
     tags: '*'
 jobs:
   test:
+    permissions:
+      contents: read
+      id-token: write
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -32,7 +35,7 @@ jobs:
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - uses: actions/cache@v1
+      - uses: actions/cache@v4
         env:
           cache-name: cache-artifacts
         with:
@@ -47,9 +50,12 @@ jobs:
         env:
           JULIA_NUM_THREADS: 4
       - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v1
+      - uses: codecov/codecov-action@v5
         with:
-          file: lcov.info
+          files: lcov.info
+          # Public fork pull requests use tokenless upload; repository jobs use OIDC.
+          use_oidc: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          fail_ci_if_error: true
   # docs:
   #   name: Documentation
   #   runs-on: ubuntu-latest

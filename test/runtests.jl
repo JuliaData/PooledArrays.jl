@@ -15,6 +15,11 @@ end
 @testset "PooledArrays" begin
     @test eltype(PooledArray(Int[])) === Int
 
+    @test PooledArray(Int) == Int[]
+    @test PooledArray(Int) isa PooledVector{Int, UInt32}
+    @test PooledArray(Int, UInt64) == Int[]
+    @test PooledArray(Int, UInt64) isa PooledVector{Int, UInt64}
+
     a = rand(10)
     b = rand(10,10)
     c = rand(1:10, 1000)

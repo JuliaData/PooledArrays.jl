@@ -199,8 +199,8 @@ end
     PooledArray{T}(d, signed=signed, compress=compress)
 
 # Construct an empty PooledVector of a specific type
-@inline PooledArray(t::Type) = PooledArray(Array(t,0))
-@inline PooledArray(t::Type, r::Type) = PooledArray(Array(t,0), r)
+@inline PooledArray(t::Type) = PooledArray(Array{t}(undef,0))
+@inline PooledArray(t::Type, r::Type) = PooledArray(Array{t}(undef,0), r)
 
 ##############################################################################
 ##
