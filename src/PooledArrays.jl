@@ -307,16 +307,6 @@ function Base.invpermute!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
     return x
 end
 
-function Base.permute!!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
-    Base.permute!!(x.refs, p)
-    return x
-end
-
-function Base.invpermute!!(x::PooledArray, p::AbstractVector{T}) where T<:Integer
-    Base.invpermute!!(x.refs, p)
-    return x
-end
-
 Base.similar(pa::PooledArray{T,R}, S::Type, dims::Dims) where {T,R} =
     PooledArray(RefArray(zeros(R, dims)), Dict{S,R}())
 
