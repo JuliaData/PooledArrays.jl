@@ -279,7 +279,11 @@ function Base.copyto!(dest::PooledArrOrSub{T, N, R}, doffs::Union{Signed, Unsign
         copyto!(DataAPI.refarray(dest), doffs, DataAPI.refarray(src), soffs, n)
     else
         @inbounds for i in 0:n-1
-            dest[doffs+i] = src[soffs+i]
+            if iszero(src[soffs+i])
+                dest.refs[doffs+i] = zero(eltype(dest.refs))
+            else
+                dest[doffs+i] = src[soffs+i]
+            end
         end
     end
     return dest
